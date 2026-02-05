@@ -5,24 +5,18 @@ A minimal personal assistant that runs Claude securely in containers. Small enou
 ## Quick Start
 
 ```bash
-git clone https://github.com/nonoclaw/noclaw.git
+git clone https://github.com/noclaw/noclaw.git
 cd noclaw
 claude
 ```
 
-Then run `/setup`. Claude Code handles everything: dependencies, authentication, container setup.
+Then run `/setup`.
 
 ## Philosophy
 
-**Small enough to understand.** ~500 lines of core code. No frameworks, no complexity. Have Claude Code explain it to you.
+**KISS - Keep it Simple** ~500 lines of core code. No frameworks, no complexity.
 
-**Secure by isolation.** Claude runs in Docker containers with explicit filesystem mounts. Real security, not permission checks.
-
-**Built for one user.** This isn't a framework. It's working software for you. Fork it and have Claude Code make it yours.
-
-**AI-native.** No config files. Want different behavior? Ask Claude to change the code. Want to add Telegram? Run `/add-telegram`.
-
-**Skills over features.** Don't add features to the codebase. Add [Claude Code skills](.claude/skills) that transform your fork.
+**Built for you** This is working software for you. Ask Claude Code to make it do what you want.
 
 ## What It Does
 
@@ -130,8 +124,12 @@ Start universal. Add your preferred channel with a skill. That's the point.
 Yes, use `--local` flag, but you lose security isolation.
 
 **How do I debug issues?**
-Ask Claude Code. "Why isn't the scheduler working?" The AI-native way.
+Ask Claude Code. 
 
 ## License
 
 MIT
+
+## Acknowledgement
+
+Inspired by [NanoClaw](https://github.com/gavrielc/nanoclaw)

@@ -1,0 +1,23 @@
+# Python dependencies for Claude Agent SDK API Server
+
+# FastAPI server dependencies
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+python-multipart>=0.0.6
+python-dotenv>=1.0.0
+
+# Claude Code SDK (optional - install manually if available)
+# claude-agent-sdk>=0.1.0
+
+# Scheduler dependencies
+croniter>=2.0.1
+
+# HTTP client for callbacks
+aiohttp>=3.9.1
+httpx>=0.25.2
+
+# Development and testing
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
+

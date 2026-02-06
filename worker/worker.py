@@ -26,8 +26,18 @@ class ClaudeWorker:
         self.workspace = Path("/workspace")
         self.claude_md_path = self.workspace / "CLAUDE.md"
 
-    async def execute_with_sdk(self, prompt: str, system_prompt: str) -> str:
-        """Execute using real Claude Agent SDK with ClaudeSDKClient"""
+    async def execute_with_sdk(self, prompt: str, system_prompt: str, model_hint: str = None) -> Dict[str, Any]:
+        """
+        Execute using real Claude Agent SDK with ClaudeSDKClient
+
+        Args:
+            prompt: User prompt
+            system_prompt: System instructions
+            model_hint: Optional model preference ("haiku", "sonnet", "opus")
+
+        Returns:
+            Dict with response text, model_used, and tokens_used
+        """
         from claude_agent_sdk import (
             ClaudeSDKClient,
             ClaudeAgentOptions,
@@ -47,6 +57,19 @@ class ClaudeWorker:
         # Add system prompt if provided
         if system_prompt:
             options_dict["system_prompt"] = system_prompt
+
+        # Add model hint if provided
+        # Note: Claude SDK auto-selects model based on task complexity,
+        # but we can provide a hint
+        if model_hint:
+            model_map = {
+                "haiku": "claude-haiku-4-5",
+                "sonnet": "claude-sonnet-4-5",
+                "opus": "claude-opus-4-6"
+            }
+            if model_hint.lower() in model_map:
+                options_dict["model"] = model_map[model_hint.lower()]
+                logger.info(f"Using model hint: {model_hint} -> {options_dict['model']}")
 
         claude_options = ClaudeAgentOptions(**options_dict)
 
@@ -76,7 +99,12 @@ class ClaudeWorker:
         if tool_uses:
             response_text += "\n\n" + " ".join(tool_uses)
 
-        return response_text if response_text else "No response received from Claude SDK"
+        # Return response with metadata
+        return {
+            "response": response_text if response_text else "No response received from Claude SDK",
+            "model_used": options_dict.get("model", "auto"),
+            "tokens_used": None  # SDK doesn't expose token counts yet
+        }
 
     async def run(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -91,6 +119,7 @@ class ClaudeWorker:
         prompt = input_data.get("prompt", "")
         user = input_data.get("user", "unknown")
         context = input_data.get("context", {})
+        model_hint = input_data.get("model_hint")
 
         logger.info(f"Processing request for user: {user}")
 
@@ -100,22 +129,43 @@ class ClaudeWorker:
             system_prompt = self.claude_md_path.read_text()
             logger.info("Loaded CLAUDE.md context")
 
+        # Load persistent memory if exists
+        memory_path = self.workspace / "memory.md"
+        if memory_path.exists():
+            memory_content = memory_path.read_text().strip()
+            if memory_content:
+                system_prompt += f"\n\n## Remembered Facts\n{memory_content}"
+                logger.info("Loaded memory.md context")
+
         # Add context information to prompt
-        enhanced_prompt = self._enhance_prompt(prompt, context, user)
+        history = input_data.get("history", [])
+        enhanced_prompt = self._enhance_prompt(prompt, context, user, history)
 
         try:
             # Execute with Claude SDK
-            response = await self.execute_with_sdk(
+            result = await self.execute_with_sdk(
                 prompt=enhanced_prompt,
-                system_prompt=system_prompt
+                system_prompt=system_prompt,
+                model_hint=model_hint
             )
 
+            # Extract response and metadata
+            response_text = result["response"]
+            model_used = result["model_used"]
+            tokens_used = result["tokens_used"]
+
             # Extract scheduled tasks from response
-            scheduled_tasks = self._extract_scheduled_tasks(response)
+            scheduled_tasks = self._extract_scheduled_tasks(response_text)
+
+            # Write structured sidecar output for host to read
+            sidecar_path = self.workspace / ".noclaw_output.json"
+            sidecar_path.write_text(json.dumps({"scheduled_tasks": scheduled_tasks}))
 
             return {
-                "response": response,
+                "response": response_text,
                 "scheduled_tasks": scheduled_tasks,
+                "model_used": model_used,
+                "tokens_used": tokens_used,
                 "user": user,
                 "success": True
             }
@@ -138,20 +188,29 @@ class ClaudeWorker:
                 "success": False
             }
 
-    def _enhance_prompt(self, prompt: str, context: Dict, user: str) -> str:
+    def _enhance_prompt(self, prompt: str, context: Dict, user: str, history: List = None) -> str:
         """Enhance prompt with context information"""
-        enhanced = prompt
+        parts = []
 
-        # Add user context
         if user != "unknown":
-            enhanced = f"[User: {user}]\n{enhanced}"
+            parts.append(f"[User: {user}]")
 
-        # Add any extra context
+        # Add recent conversation history
+        if history:
+            parts.append("Recent conversation:")
+            for msg in reversed(history):  # oldest first (DB returns newest-first)
+                parts.append(f"  User: {msg['message']}")
+                if msg.get("response"):
+                    parts.append(f"  Assistant: {msg['response'][:200]}")
+            parts.append("")
+
+        parts.append(prompt)
+
         if context:
             context_str = "\n".join([f"{k}: {v}" for k, v in context.items()])
-            enhanced = f"{enhanced}\n\nContext:\n{context_str}"
+            parts.append(f"\nContext:\n{context_str}")
 
-        return enhanced
+        return "\n".join(parts)
 
     def _extract_scheduled_tasks(self, response: str) -> List[Dict]:
         """

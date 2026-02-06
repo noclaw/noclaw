@@ -9,23 +9,24 @@ This file provides guidance to Claude Code when working with this repository.
 - Universal webhook API that works with any service
 - Per-user contexts and workspaces with SQLite persistence
 - AI-native platform - modify code directly rather than using config files
-- Small codebase (~500 lines core) designed to be understood and modified
+- Small codebase (~800 lines core) designed to be understood and modified
 
-## Current Status: v0.1 - Initial Release
+## Current Status: v0.2 - Production Ready
 
-### What's Working
-- ✅ **Core Components** - FastAPI server, container runner, context manager, scheduler
-- ✅ **Container Isolation** - Docker-based execution with Claude SDK
-- ✅ **Webhook Channel** - Universal HTTP API for any integration
-- ✅ **User Contexts** - Per-user workspaces and CLAUDE.md files
-- ✅ **SQLite Persistence** - Message history and scheduled tasks
-- ✅ **Real Claude SDK** - Fully working with ClaudeSDKClient
-- ✅ **Test Suite** - Comprehensive tests for real Claude responses
+### Core Features
+- ✅ **Container Isolation** - SecurityPolicy with clear workspace-only defaults
+- ✅ **Enhanced Memory** - 10-turn history, memory.md for persistent facts, auto-archival
+- ✅ **Model Selection** - Choose Haiku/Sonnet/Opus per request, track usage
+- ✅ **Heartbeat Scheduling** - Simple periodic checks without cron syntax
+- ✅ **Structured Logging** - Human/JSON formats with log levels
+- ✅ **Monitoring Dashboard** - Real-time dashboard with Server-Sent Events
+- ✅ **Startup Validation** - Comprehensive system checks on startup
+- ✅ **Bundled Skills** - Telegram, Email, Discord, Slack integrations included
 
-### Known Issues
-- ⚠️ **Mount Security Not Enforced** - SecurityPolicy class exists in `server/container_runner.py:243-276` but is not actively used. Workspace validation needs to be integrated.
-- Container memory limit must be 1GB minimum for Claude CLI
-- Network isolation disabled to allow Claude API access
+### Known Requirements
+- Container memory limit: 1GB minimum for Claude CLI
+- Network access: Required for Claude API
+- Docker or Podman required
 
 ## Architecture
 
@@ -33,23 +34,52 @@ This file provides guidance to Claude Code when working with this repository.
 - **[server/assistant.py](server/assistant.py)** - Main orchestrator, handles webhooks and coordination
 - **[server/container_runner.py](server/container_runner.py)** - Docker container isolation and execution
 - **[server/context_manager.py](server/context_manager.py)** - User contexts, SQLite persistence, workspace management
-- **[server/scheduler.py](server/scheduler.py)** - Cron-based task scheduling
+- **[server/heartbeat.py](server/heartbeat.py)** - Heartbeat scheduler for periodic checks
+- **[server/simple_scheduler.py](server/simple_scheduler.py)** - Minimal scheduler (no cron)
+- **[server/security.py](server/security.py)** - SecurityPolicy for mount validation
+- **[server/dashboard.py](server/dashboard.py)** - Monitoring dashboard with SSE
 - **[worker/worker.py](worker/worker.py)** - Isolated Claude SDK execution inside containers
 
 ### Data Structure
 ```
 data/
-├── assistant.db          # SQLite database (contexts, message_history, scheduled_tasks)
+├── assistant.db          # SQLite database (contexts, message_history, heartbeat_log)
 └── workspaces/           # Per-user workspaces
     └── {user_id}/
-        └── CLAUDE.md     # User-specific instructions
+        ├── CLAUDE.md     # User-specific instructions (rewritten each run)
+        ├── memory.md     # Persistent facts Claude learns about the user
+        ├── HEARTBEAT.md  # Periodic check checklist (optional)
+        ├── files/        # User files
+        └── conversations/ # Archived conversation history
 ```
 
-### Docker Setup
-- **[Dockerfile.server](Dockerfile.server)** - Multi-stage build for Claude SDK image
-- **[docker-compose.yml](docker-compose.yml)** - Service configuration
-- Container runs with 1GB memory limit, CPU limits, and security options
-- Workspace mounted at `/workspace` inside container
+### Scheduling Model
+
+**Default: Heartbeat Scheduling**
+- Simple periodic checks (default: 30 minutes)
+- No cron syntax required
+- One turn checks multiple things (cost-efficient)
+- Smart suppression with HEARTBEAT_OK pattern
+- See [docs/HEARTBEAT.md](docs/HEARTBEAT.md)
+
+**Optional: Cron Scheduling**
+- Traditional cron expressions for exact timing
+- Available via `/add-cron` skill
+- Use when exact timing is required (9am daily, etc.)
+- See [.claude/skills/add-cron/SKILL.md](.claude/skills/add-cron/SKILL.md)
+
+**Why heartbeat by default?**
+- Simpler for most users (no cron syntax to learn)
+- More cost-efficient (one turn vs multiple)
+- Context-aware (maintains conversation memory)
+- Users who need cron can easily add it via skill
+
+### Container Architecture
+- **[worker/Dockerfile](worker/Dockerfile)** - Claude SDK worker container (spawned per request)
+- **[Dockerfile.server](Dockerfile.server)** - FastAPI server container (optional deployment)
+- **[docker-compose.yml](docker-compose.yml)** - Server deployment configuration (optional)
+- Worker containers run with 1GB memory limit, CPU limits, and security options
+- User workspace mounted at `/workspace` inside worker containers
 
 ## Development Guidelines
 
@@ -65,17 +95,18 @@ Instead of adding features to the codebase, create Claude Code skills:
 - Each skill should have a SKILL.md describing what it does
 - Users invoke skills with `/skill-name` command
 
-### Priority TODOs
-1. **Integrate Mount Security** - The SecurityPolicy class needs to be:
-   - Instantiated in ContainerRunner.__init__
-   - Called in run() method before mounting workspaces
-   - Configured to reject invalid workspace paths
+### Available Skills
+1. **Setup**:
+   - `/setup` - Initial NoClaw setup wizard
 
-2. **Add Skills for Common Channels**:
-   - `/add-email` - Email integration
-   - `/add-telegram` - Telegram bot
-   - `/add-discord` - Discord bot
-   - `/add-slack` - Slack integration
+2. **Communication Channels**:
+   - `/add-telegram` - Telegram bot integration (full implementation)
+   - `/add-email` - Email IMAP/SMTP integration
+   - `/add-discord` - Discord bot integration (pattern guide)
+   - `/add-slack` - Slack bot integration (pattern guide)
+
+3. **Scheduling**:
+   - `/add-cron` - Traditional cron scheduling (exact times)
 
 ## Testing
 
@@ -89,19 +120,30 @@ curl -X POST http://localhost:3000/webhook \
   -d '{"user": "test", "message": "Hello"}'
 
 # Run test suite
-bash tests/test_assistant.sh
+bash tests/run_tests.sh
+
+# Or run individual tests
+python3 tests/test_security.py    # Security policy validation
+python3 tests/test_memory.py      # Enhanced memory system
+python3 tests/test_heartbeat.py   # Heartbeat scheduler
+python3 tests/test_cron_skill.py  # Scheduler refactoring
+python3 tests/test_claude.py      # Smoke test (requires server running)
 ```
 
 ## Authentication
 
-The system uses Claude OAuth tokens:
+### Claude Authentication
 - Set `CLAUDE_CODE_OAUTH_TOKEN` in `.env` file
 - Get token with: `claude setup-token`
 - Token is passed to containers via environment variable
-- No API key management in code
+
+### Webhook Authentication
+- Set `NOCLAW_API_KEY` in `.env` to require API key on all endpoints
+- Pass via `X-API-Key` header or `Authorization: Bearer <key>`
+- If unset, all requests are allowed (dev mode)
 
 ## File References
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
-See [STARTUP.md](STARTUP.md) for setup and installation instructions.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
+See [QUICKSTART.md](QUICKSTART.md) for setup and installation instructions.
 See [README.md](README.md) for project overview and philosophy.

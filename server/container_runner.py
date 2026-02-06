@@ -13,6 +13,8 @@ import subprocess
 import shlex
 import os
 
+from .security import SecurityPolicy
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,6 +40,8 @@ class ContainerRunner:
         self.timeout = timeout or int(os.getenv("CONTAINER_TIMEOUT", "120"))
         self.memory_limit = memory_limit or os.getenv("CONTAINER_MEMORY_LIMIT", "1g")
         self.cpu_limit = cpu_limit or os.getenv("CONTAINER_CPU_LIMIT", "1.0")
+
+        self.security = SecurityPolicy()
 
         # Check if Docker is available
         self.runtime = self._detect_runtime()
@@ -79,6 +83,21 @@ class ContainerRunner:
         workspace = Path(context.get("workspace", "/tmp/workspace"))
         prompt = context.get("prompt", "")
 
+        # Validate workspace path against security policy
+        if not self.security.validate_workspace(workspace):
+            raise ValueError(
+                f"Workspace path rejected by security policy.\n"
+                f"\n"
+                f"Requested workspace: {workspace.absolute()}\n"
+                f"Allowed workspace root: {self.security.workspace_root}\n"
+                f"\n"
+                f"By default, containers can only access workspaces under:\n"
+                f"  {self.security.workspace_root}\n"
+                f"\n"
+                f"This ensures secure isolation. Each user's workspace is separate.\n"
+                f"See server/security.py for the full security model."
+            )
+
         # Ensure workspace exists
         workspace.mkdir(parents=True, exist_ok=True)
 
@@ -90,7 +109,8 @@ class ContainerRunner:
         input_data = {
             "prompt": prompt,
             "context": context.get("extra_context", {}),
-            "user": user
+            "user": user,
+            "history": context.get("history", []),
         }
 
         # Create temporary file for input
@@ -115,22 +135,36 @@ class ContainerRunner:
             try:
                 output = json.loads(result)
                 logger.info(f"Container execution successful for {user}")
-                return output
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse container output: {e}")
                 logger.debug(f"Raw output: {result}")
-                return {
+                output = {
                     "response": f"Error: Invalid response from container",
                     "error": str(e),
                     "raw_output": result
                 }
+
+            # Read structured sidecar output if it exists
+            sidecar_path = workspace / ".noclaw_output.json"
+            if sidecar_path.exists():
+                try:
+                    sidecar = json.loads(sidecar_path.read_text())
+                    if "scheduled_tasks" in sidecar:
+                        output["scheduled_tasks"] = sidecar["scheduled_tasks"]
+                    logger.info("Read structured output from sidecar file")
+                except (json.JSONDecodeError, OSError) as e:
+                    logger.warning(f"Failed to read sidecar file: {e}")
+                finally:
+                    sidecar_path.unlink(missing_ok=True)
+
+            return output
 
         finally:
             # Clean up temp file
             Path(input_path).unlink(missing_ok=True)
 
     def _build_command(self, workspace: Path, input_path: str) -> List[str]:
-        """Build container execution command"""
+        """Build container execution command with security isolation"""
         cmd = [
             self.runtime, "run",
             "--rm",  # Remove container after execution
@@ -142,12 +176,23 @@ class ContainerRunner:
             # "--read-only",  # Removed: Claude CLI needs write access
             "--security-opt", "no-new-privileges",  # Security hardening
 
-            # Mount workspace
+            # Mount workspace (DEFAULT - always mounted)
             "-v", f"{workspace.absolute()}:/workspace:rw",
 
-            # Mount input file
+            # Mount input file (read-only)
             "-v", f"{input_path}:/input.json:ro",
         ]
+
+        # Load and validate additional mounts from workspace config
+        additional_mounts = self.security.load_additional_mounts(workspace)
+        for mount in additional_mounts:
+            mode = "ro" if mount["readonly"] else "rw"
+            cmd.extend([
+                "-v", f"{mount['host']}:{mount['container']}:{mode}"
+            ])
+            logger.info(
+                f"Additional mount: {mount['host']} → {mount['container']} ({mode})"
+            )
 
         # Environment variables - OAuth token takes precedence
         # Only pass ANTHROPIC_API_KEY if OAuth token is NOT set
@@ -240,42 +285,6 @@ class ContainerRunner:
             })
 
 
-class SecurityPolicy:
-    """Security policies for container execution"""
-
-    def __init__(self):
-        self.allowed_roots = [
-            {"path": "~/projects", "read_write": False},
-            {"path": "/data/workspaces", "read_write": True}
-        ]
-        self.blocked_patterns = [
-            ".ssh", ".env", "node_modules",
-            ".git/config", "credentials", "secrets"
-        ]
-
-    def validate_workspace(self, workspace: Path) -> bool:
-        """Validate workspace path against security policy"""
-        workspace_str = str(workspace.absolute())
-
-        # Check for blocked patterns
-        for pattern in self.blocked_patterns:
-            if pattern in workspace_str:
-                logger.warning(f"Blocked workspace with pattern: {pattern}")
-                return False
-
-        # Check if in allowed roots
-        for root in self.allowed_roots:
-            root_path = Path(root["path"]).expanduser().absolute()
-            try:
-                workspace.relative_to(root_path)
-                return True  # Workspace is under an allowed root
-            except ValueError:
-                continue
-
-        logger.warning(f"Workspace not in allowed roots: {workspace}")
-        return False
-
-
 class LocalContainerRunner:
     """Local runner that executes Claude SDK directly without Docker"""
 
@@ -304,7 +313,8 @@ class LocalContainerRunner:
         input_data = {
             "prompt": prompt,
             "context": context.get("extra_context", {}),
-            "user": user
+            "user": user,
+            "history": context.get("history", []),
         }
 
         # Create temporary workspace symlink if needed
@@ -325,6 +335,10 @@ class LocalContainerRunner:
             worker.claude_md_path = claude_file
 
             result = await worker.run(input_data)
+
+            # Clean up sidecar file if worker wrote one
+            sidecar_path = workspace / ".noclaw_output.json"
+            sidecar_path.unlink(missing_ok=True)
 
             sys.path = old_path
             return result

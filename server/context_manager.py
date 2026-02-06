@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Context Manager - Handles user contexts and persistence
+Context Manager - Handles user contexts, memory, and persistence
 """
 
 import sqlite3
@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger(__name__)
+
+
+# Memory and history configuration
+MAX_RECENT_HISTORY = 10  # Increased from 5 to 10
+ARCHIVE_THRESHOLD = 50  # Archive history when it exceeds this
 
 
 class ContextManager:
@@ -33,7 +38,10 @@ class ContextManager:
                     claude_md TEXT,
                     settings TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    heartbeat_enabled INTEGER DEFAULT 0,
+                    heartbeat_interval INTEGER DEFAULT 1800,
+                    last_heartbeat TIMESTAMP
                 )
             """)
 
@@ -45,6 +53,8 @@ class ContextManager:
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     message TEXT NOT NULL,
                     response TEXT,
+                    model_used TEXT,
+                    tokens_used INTEGER,
                     metadata TEXT,
                     FOREIGN KEY (user_id) REFERENCES contexts (user_id)
                 )
@@ -63,6 +73,18 @@ class ContextManager:
                     last_run TIMESTAMP,
                     status TEXT DEFAULT 'active',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES contexts (user_id)
+                )
+            """)
+
+            # Heartbeat log table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS heartbeat_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    result TEXT,
+                    checks_run TEXT,
                     FOREIGN KEY (user_id) REFERENCES contexts (user_id)
                 )
             """)
@@ -101,7 +123,7 @@ class ContextManager:
                 }
             else:
                 # Create new context
-                workspace_path = str(Path("data/workspaces") / user_id)
+                workspace_path = str((Path("data/workspaces") / user_id).absolute())
                 claude_md = self._get_default_claude_md(user_id)
 
                 cursor.execute("""
@@ -110,8 +132,18 @@ class ContextManager:
                 """, (user_id, workspace_path, claude_md, "{}"))
                 conn.commit()
 
-                # Create workspace directory
-                Path(workspace_path).mkdir(parents=True, exist_ok=True)
+                # Create workspace directory structure
+                workspace = Path(workspace_path)
+                workspace.mkdir(parents=True, exist_ok=True)
+
+                # Create subdirectories
+                (workspace / "files").mkdir(exist_ok=True)
+                (workspace / "conversations").mkdir(exist_ok=True)
+
+                # Initialize memory.md if it doesn't exist
+                memory_file = workspace / "memory.md"
+                if not memory_file.exists():
+                    memory_file.write_text(f"# Memory for {user_id}\n\n")
 
                 logger.info(f"Created new context for user: {user_id}")
 
@@ -156,18 +188,34 @@ class ContextManager:
 
         logger.info(f"Updated CLAUDE.md for {user_id}")
 
-    def add_message(self, user_id: str, message: str, response: str, metadata: Dict = None):
-        """Add message to history"""
+    def add_message(self, user_id: str, message: str, response: str, metadata: Dict = None,
+                   model_used: str = None, tokens_used: int = None):
+        """Add message to history and check if archival is needed"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO message_history (user_id, message, response, metadata)
-                VALUES (?, ?, ?, ?)
-            """, (user_id, message, response, json.dumps(metadata or {})))
+                INSERT INTO message_history (user_id, message, response, model_used, tokens_used, metadata)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_id, message, response, model_used, tokens_used, json.dumps(metadata or {})))
             conn.commit()
 
+            # Check if we need to archive old history
+            cursor.execute("""
+                SELECT COUNT(*) FROM message_history WHERE user_id = ?
+            """, (user_id,))
+            count = cursor.fetchone()[0]
+
+            if count > ARCHIVE_THRESHOLD:
+                logger.info(f"History for {user_id} exceeds threshold, archiving old messages")
+                self._archive_old_history(user_id, keep_recent=MAX_RECENT_HISTORY)
+
     def get_history(self, user_id: str, limit: int = 10) -> List[Dict]:
-        """Get message history for user"""
+        """
+        Get message history for user (newest-first).
+
+        Returns messages ordered by newest first. When displaying chronologically,
+        remember to reverse() the list.
+        """
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -175,7 +223,7 @@ class ContextManager:
             cursor.execute("""
                 SELECT * FROM message_history
                 WHERE user_id = ?
-                ORDER BY timestamp DESC
+                ORDER BY timestamp DESC, id DESC
                 LIMIT ?
             """, (user_id, limit))
 
@@ -187,6 +235,8 @@ class ContextManager:
                     "timestamp": row["timestamp"],
                     "message": row["message"],
                     "response": row["response"],
+                    "model_used": row.get("model_used"),
+                    "tokens_used": row.get("tokens_used"),
                     "metadata": json.loads(row["metadata"] or "{}")
                 }
                 for row in rows
@@ -255,6 +305,139 @@ class ContextManager:
             conn.commit()
             return cursor.rowcount > 0
 
+    def get_memory(self, user_id: str) -> str:
+        """Get persistent memory for user"""
+        context = self.get_user_context(user_id)
+        workspace = Path(context["workspace_path"])
+        memory_file = workspace / "memory.md"
+
+        if memory_file.exists():
+            return memory_file.read_text()
+        else:
+            return f"# Memory for {user_id}\n\n"
+
+    def append_memory(self, user_id: str, fact: str):
+        """Append a fact to user's memory"""
+        context = self.get_user_context(user_id)
+        workspace = Path(context["workspace_path"])
+        memory_file = workspace / "memory.md"
+
+        # Ensure memory file exists
+        if not memory_file.exists():
+            memory_file.write_text(f"# Memory for {user_id}\n\n")
+
+        # Append the fact with timestamp
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d")
+        current_content = memory_file.read_text()
+
+        # Check if fact already exists (simple duplicate detection)
+        if fact.lower() not in current_content.lower():
+            memory_file.write_text(
+                current_content + f"- [{timestamp}] {fact}\n"
+            )
+            logger.info(f"Added memory for {user_id}: {fact[:50]}...")
+        else:
+            logger.debug(f"Skipped duplicate memory for {user_id}")
+
+    def clear_memory(self, user_id: str):
+        """Clear user's memory (use with caution)"""
+        context = self.get_user_context(user_id)
+        workspace = Path(context["workspace_path"])
+        memory_file = workspace / "memory.md"
+
+        memory_file.write_text(f"# Memory for {user_id}\n\n")
+        logger.info(f"Cleared memory for {user_id}")
+
+    def _archive_old_history(self, user_id: str, keep_recent: int = MAX_RECENT_HISTORY):
+        """
+        Archive old conversation history to a file and remove from database.
+
+        Keeps only the most recent N messages in the database for performance.
+        Older messages are saved to workspace/conversations/ for reference.
+        """
+        context = self.get_user_context(user_id)
+        workspace = Path(context["workspace_path"])
+        conversations_dir = workspace / "conversations"
+        conversations_dir.mkdir(exist_ok=True)
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Get messages to archive (all except most recent N)
+            cursor.execute("""
+                SELECT * FROM message_history
+                WHERE user_id = ?
+                ORDER BY timestamp DESC
+            """, (user_id,))
+
+            all_messages = [dict(row) for row in cursor.fetchall()]
+
+            if len(all_messages) <= keep_recent:
+                return  # Nothing to archive
+
+            # Split into keep vs archive
+            messages_to_keep = all_messages[:keep_recent]
+            messages_to_archive = all_messages[keep_recent:]
+
+            if not messages_to_archive:
+                return
+
+            # Create archive file with timestamp
+            archive_date = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            archive_file = conversations_dir / f"archive_{archive_date}.json"
+
+            # Save archived messages
+            archive_data = {
+                "user_id": user_id,
+                "archived_at": datetime.utcnow().isoformat(),
+                "message_count": len(messages_to_archive),
+                "messages": messages_to_archive
+            }
+
+            archive_file.write_text(json.dumps(archive_data, indent=2))
+            logger.info(
+                f"Archived {len(messages_to_archive)} messages to {archive_file.name}"
+            )
+
+            # Delete archived messages from database
+            # Get IDs of messages to delete
+            ids_to_delete = [msg["id"] for msg in messages_to_archive]
+
+            # Delete in batches
+            placeholders = ",".join("?" * len(ids_to_delete))
+            cursor.execute(f"""
+                DELETE FROM message_history
+                WHERE id IN ({placeholders})
+            """, ids_to_delete)
+
+            conn.commit()
+            logger.info(f"Removed {len(ids_to_delete)} archived messages from database")
+
+    def get_archived_conversations(self, user_id: str) -> List[Dict]:
+        """Get list of archived conversation files for user"""
+        context = self.get_user_context(user_id)
+        workspace = Path(context["workspace_path"])
+        conversations_dir = workspace / "conversations"
+
+        if not conversations_dir.exists():
+            return []
+
+        archives = []
+        for archive_file in sorted(conversations_dir.glob("archive_*.json"), reverse=True):
+            try:
+                data = json.loads(archive_file.read_text())
+                archives.append({
+                    "filename": archive_file.name,
+                    "archived_at": data.get("archived_at"),
+                    "message_count": data.get("message_count"),
+                    "path": str(archive_file)
+                })
+            except Exception as e:
+                logger.error(f"Error reading archive {archive_file}: {e}")
+
+        return archives
+
     def _get_default_claude_md(self, user_id: str) -> str:
         """Get default CLAUDE.md content for new user"""
         return f"""# Personal Assistant Context for {user_id}
@@ -267,9 +450,33 @@ You are a personal AI assistant helping {user_id} with various tasks.
 - Remember context between conversations
 - Suggest task scheduling when appropriate
 
+## Memory System
+You have access to a persistent memory system:
+
+- **memory.md** (`/workspace/memory.md`): Persistent facts about the user
+  - Read this file to remember important information
+  - Use the Write tool to append new facts (don't duplicate existing ones)
+  - Include date in your additions for context
+
+- **Conversation History**: Last {MAX_RECENT_HISTORY} exchanges are provided automatically
+  - Older conversations are archived but not automatically loaded
+  - Focus on memory.md for long-term retention of important facts
+
+## What to Remember
+Store in memory.md when you learn:
+- User preferences and habits
+- Project names and details
+- Important dates or deadlines
+- Recurring needs or requests
+- Tool preferences
+- Names of people, teams, or systems
+
 ## User Workspace
-Your workspace is mounted at /workspace
-You can read and write files as needed for the user's tasks.
+Your workspace is mounted at /workspace with:
+- `CLAUDE.md` - Your instructions (this file)
+- `memory.md` - Persistent facts you've learned
+- `files/` - User's files
+- `conversations/` - Archived conversation history
 
 ## Scheduling
 If the user asks you to remind them or do something at a specific time,

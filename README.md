@@ -1,29 +1,40 @@
 # NoClaw
 
-A minimal personal assistant that runs Claude securely in containers. Small enough to understand. Built to be customized for your exact needs.
+A minimal personal assistant that runs Claude securely in containers. Small enough to understand (~800 lines). Built to be customized for your exact needs.
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/noclaw/noclaw.git
 cd noclaw
-claude
+
+# Option 1: Automated setup
+./setup.sh
+
+# Option 2: Step-by-step guide
+# See QUICKSTART.md for detailed instructions
 ```
 
-Then run `/setup`.
+Then follow [QUICKSTART.md](QUICKSTART.md) to get your Claude OAuth token and start the assistant.
 
 ## Philosophy
 
-**KISS - Keep it Simple** ~500 lines of core code. No frameworks, no complexity.
+**KISS - Keep it Simple** ~800 lines of core code. No frameworks, no complexity.
 
 **Built for you** This is working software for you. Ask Claude Code to make it do what you want.
+
+**Goldilocks Architecture** Not too minimal (NanoClaw), not too bloated (OpenClaw), but just right.
 
 ## What It Does
 
 - **HTTP Webhooks** - Universal API that works with any service
-- **Container Isolation** - Each request runs in a fresh Docker container
-- **Per-User Context** - Each user gets their own workspace and CLAUDE.md
-- **Scheduled Tasks** - Cron-based automation
+- **Container Isolation** - Secure workspace-only mounting with SecurityPolicy
+- **Per-User Context** - Each user gets workspace, CLAUDE.md, and memory.md
+- **Model Selection** - Choose Haiku/Sonnet/Opus per request, track usage
+- **Heartbeat Scheduling** - Simple periodic checks without cron syntax
+- **Enhanced Memory** - 10-turn history with auto-archival after 50 messages
+- **Monitoring Dashboard** - Real-time dashboard with Server-Sent Events
+- **Bundled Skills** - Telegram, Email, Discord, Slack integrations included
 - **Real Claude SDK** - Full Claude Code capabilities, not just API calls
 
 ## Architecture
@@ -64,39 +75,58 @@ The codebase is small enough that Claude can safely modify it.
 ## File Structure
 
 ```
-├── server/                   # Core server (~500 lines)
+├── server/                   # Core server (~800 lines)
 │   ├── assistant.py          # Main orchestrator
 │   ├── container_runner.py   # Docker isolation
-│   ├── context_manager.py    # User contexts
-│   └── scheduler.py          # Cron tasks
+│   ├── context_manager.py    # User contexts + memory
+│   ├── heartbeat.py          # Heartbeat scheduler
+│   ├── security.py           # SecurityPolicy
+│   ├── logger.py             # Structured logging
+│   └── dashboard.py          # Monitoring dashboard
 ├── worker/                   # Container worker
 │   ├── Dockerfile            # Claude SDK image
 │   └── worker.py             # Isolated execution
 ├── tests/                    # Test suite
-├── .claude/skills/           # Claude Code skills
-│   └── setup/                # Installation skill
+├── .claude/skills/           # Bundled skills
+│   ├── add-telegram/         # Telegram integration
+│   ├── add-email/            # Email integration
+│   ├── add-discord/          # Discord integration
+│   ├── add-slack/            # Slack integration
+│   └── add-cron/             # Advanced cron scheduling
+├── docs/                     # Documentation
+│   └── ARCHITECTURE.md       # Architecture guide
 └── data/                     # Runtime data
     ├── assistant.db          # SQLite database
     └── workspaces/           # User workspaces
+        └── {user_id}/
+            ├── CLAUDE.md     # User instructions
+            ├── memory.md     # Persistent facts
+            └── files/        # User files
 ```
 
 ## Contributing
 
 **Don't add features. Add skills.**
 
-Want to add Discord support? Don't modify the code. Create `.claude/skills/add-discord/SKILL.md` that teaches Claude how to add it.
+Want to add a new channel? Don't modify core. Create `.claude/skills/add-{channel}/SKILL.md` that teaches Claude how to add it.
 
-Users run `/add-discord` and get clean code for exactly what they need.
+Users run `/add-{channel}` and get clean code for exactly what they need.
+
+### Bundled Skills (Already Included)
+
+- ✅ **`/add-telegram`** - Telegram bot integration (full implementation)
+- ✅ **`/add-email`** - Email IMAP/SMTP integration
+- ✅ **`/add-discord`** - Discord bot pattern guide
+- ✅ **`/add-slack`** - Slack bot pattern guide
+- ✅ **`/add-cron`** - Advanced cron scheduling
 
 ### Suggested Skills to Contribute
 
-- **`/add-api-keys`** - Add API key authentication for the webhook endpoint
-- **`/add-monitoring`** - Add a monitoring dashboard for system health
-- **`/add-email`** - Add email channel support (IMAP/SMTP)
-- **`/add-telegram`** - Add Telegram bot integration
-- **`/add-discord`** - Add Discord bot integration
-- **`/add-slack`** - Add Slack bot integration
-- **`/add-cleanup`** - Add automated container and temp file cleanup
+- **`/add-sms`** - SMS integration (Twilio)
+- **`/add-matrix`** - Matrix chat integration
+- **`/add-webhook-out`** - Outbound webhook notifications
+- **`/add-cleanup`** - Automated container and temp file cleanup
+- **`/add-backup`** - Database and workspace backup
 
 ## Requirements
 

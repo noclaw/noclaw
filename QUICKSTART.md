@@ -1,4 +1,29 @@
-# NoClaw Start Guide
+# NoClaw Quick Start Guide
+
+## Setup Options
+
+NoClaw provides multiple ways to get started:
+
+1. **Automated Setup** - Run `./setup.sh` for one-command setup
+   - Installs Python dependencies
+   - Builds Docker container
+   - Creates `.env` template
+   - ✅ **Recommended for most users**
+
+2. **Manual Setup** - Follow the step-by-step instructions below
+   - Understand each step
+   - Better for debugging issues
+   - ✅ **Recommended if setup.sh fails**
+
+3. **Validation** - Run `python run_assistant.py` (no `--skip-validation` flag)
+   - Runs `server/startup.py` checks before starting
+   - Validates Docker, Python, token, disk space
+   - Reports clear error messages
+   - ✅ **Always enabled by default**
+
+**Note:** The OAuth token step is always manual - you need to run `claude setup-token` in a separate terminal and copy the token.
+
+---
 
 ## Prerequisites
 
@@ -38,19 +63,37 @@ This command will:
 
 Copy the entire token - you'll need it for the next step.
 
-## Step 2: Setup
+## Step 2: Setup NoClaw
+
+### Option A: Automated (Recommended)
 
 ```bash
 # Clone the repository (if not already done)
 git clone <repo-url>
 cd noclaw
 
-# Run the setup script
+# Run setup script
 ./setup.sh
 
 # Edit .env and add your token
 nano .env
 ```
+
+### Option B: Manual Steps
+
+```bash
+# Install Python dependencies
+pip3 install -r server/requirements.txt
+
+# Build Docker container
+./build_worker.sh
+
+# Create .env file
+cp .env.example .env
+nano .env
+```
+
+### Configure .env
 
 Add this line to your `.env` file:
 ```

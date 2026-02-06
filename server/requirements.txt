@@ -21,3 +21,6 @@ httpx>=0.25.2
 pytest>=7.4.3
 pytest-asyncio>=0.21.1
 
+
+# System monitoring
+psutil>=5.9.0  # For dashboard system stats

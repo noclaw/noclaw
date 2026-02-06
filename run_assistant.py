@@ -20,10 +20,20 @@ load_dotenv()
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Configure logging based on LOG_LEVEL env var
+# Setup structured logging
+from server.logger import setup_logging, get_logger
+
 log_level = os.getenv("LOG_LEVEL", "INFO")
-logging.basicConfig(level=getattr(logging, log_level))
-logger = logging.getLogger(__name__)
+log_format = os.getenv("LOG_FORMAT", "human")  # "human" or "json"
+log_file = os.getenv("LOG_FILE")  # Optional log file
+
+setup_logging(
+    level=log_level,
+    log_format=log_format,
+    log_file=Path(log_file) if log_file else None
+)
+
+logger = get_logger(__name__)
 
 # Shutdown flag
 shutdown_event = asyncio.Event()
@@ -117,8 +127,21 @@ def main():
         default=os.getenv("DATA_DIR", "data"),
         help="Data directory (default: from .env or data)"
     )
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Skip startup validation checks"
+    )
 
     args = parser.parse_args()
+
+    # Run startup validation (unless skipped)
+    if not args.skip_validation:
+        from server.startup import validate_startup
+        if not validate_startup():
+            logger.error("Startup validation failed. Fix errors above or use --skip-validation")
+            sys.exit(1)
+        print()  # Blank line after validation
 
     # Check for force local mode from env
     if os.getenv("LOCAL_MODE", "").lower() == "true":

@@ -229,14 +229,16 @@ class ContextManager:
 
             rows = cursor.fetchall()
 
+            columns = [desc[0] for desc in cursor.description] if cursor.description else []
+
             return [
                 {
                     "id": row["id"],
                     "timestamp": row["timestamp"],
                     "message": row["message"],
                     "response": row["response"],
-                    "model_used": row.get("model_used"),
-                    "tokens_used": row.get("tokens_used"),
+                    "model_used": row["model_used"] if "model_used" in columns else None,
+                    "tokens_used": row["tokens_used"] if "tokens_used" in columns else None,
                     "metadata": json.loads(row["metadata"] or "{}")
                 }
                 for row in rows

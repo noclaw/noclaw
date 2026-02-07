@@ -137,11 +137,7 @@ server/
 ```
 .claude/skills/
 ├── add-telegram/        # Telegram bot integration
-├── add-email/           # Email via IMAP/SMTP
-├── add-discord/         # Discord bot
-├── add-slack/           # Slack bot
-├── add-cron/            # Advanced cron scheduling
-└── setup/               # Initial setup wizard
+└── add-cron/            # Advanced cron scheduling
 ```
 
 **Why this works:**
@@ -191,11 +187,7 @@ noclaw/
 │           ├── conversations/ # Archived conversations
 │           └── config.json    # Optional workspace config
 ├── .claude/skills/            # Bundled skills
-│   ├── setup/                 # Initial setup
 │   ├── add-telegram/          # Telegram integration
-│   ├── add-email/             # Email integration
-│   ├── add-discord/           # Discord integration
-│   ├── add-slack/             # Slack integration
 │   └── add-cron/              # Advanced scheduling
 ├── docs/                      # Documentation
 │   ├── ARCHITECTURE.md        # This file

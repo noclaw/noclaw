@@ -34,7 +34,7 @@ Then follow [QUICKSTART.md](QUICKSTART.md) to get your Claude OAuth token and st
 - **Heartbeat Scheduling** - Simple periodic checks without cron syntax
 - **Enhanced Memory** - 10-turn history with auto-archival after 50 messages
 - **Monitoring Dashboard** - Real-time dashboard with Server-Sent Events
-- **Bundled Skills** - Telegram, Email, Discord, Slack integrations included
+- **Bundled Skills** - Telegram and cron scheduling via `/add-telegram`, `/add-cron`
 - **Real Claude SDK** - Full Claude Code capabilities, not just API calls
 
 ## Architecture
@@ -89,9 +89,6 @@ The codebase is small enough that Claude can safely modify it.
 ├── tests/                    # Test suite
 ├── .claude/skills/           # Bundled skills
 │   ├── add-telegram/         # Telegram integration
-│   ├── add-email/            # Email integration
-│   ├── add-discord/          # Discord integration
-│   ├── add-slack/            # Slack integration
 │   └── add-cron/             # Advanced cron scheduling
 ├── docs/                     # Documentation
 │   └── ARCHITECTURE.md       # Architecture guide
@@ -114,19 +111,16 @@ Users run `/add-{channel}` and get clean code for exactly what they need.
 
 ### Bundled Skills (Already Included)
 
-- ✅ **`/add-telegram`** - Telegram bot integration (full implementation)
-- ✅ **`/add-email`** - Email IMAP/SMTP integration
-- ✅ **`/add-discord`** - Discord bot pattern guide
-- ✅ **`/add-slack`** - Slack bot pattern guide
+- ✅ **`/add-telegram`** - Telegram bot integration
 - ✅ **`/add-cron`** - Advanced cron scheduling
 
 ### Suggested Skills to Contribute
 
+- **`/add-email`** - Email IMAP/SMTP integration
+- **`/add-discord`** - Discord bot integration
+- **`/add-slack`** - Slack bot integration
 - **`/add-sms`** - SMS integration (Twilio)
 - **`/add-matrix`** - Matrix chat integration
-- **`/add-webhook-out`** - Outbound webhook notifications
-- **`/add-cleanup`** - Automated container and temp file cleanup
-- **`/add-backup`** - Database and workspace backup
 
 ## Requirements
 

@@ -21,7 +21,7 @@ This file provides guidance to Claude Code when working with this repository.
 - ✅ **Structured Logging** - Human/JSON formats with log levels
 - ✅ **Monitoring Dashboard** - Real-time dashboard with Server-Sent Events
 - ✅ **Startup Validation** - Comprehensive system checks on startup
-- ✅ **Bundled Skills** - Telegram, Email, Discord, Slack integrations included
+- ✅ **Bundled Skills** - Telegram and cron scheduling via `/add-telegram`, `/add-cron`
 
 ### Known Requirements
 - Container memory limit: 1GB minimum for Claude CLI
@@ -100,10 +100,7 @@ Instead of adding features to the codebase, create Claude Code skills:
    - `/setup` - Initial NoClaw setup wizard
 
 2. **Communication Channels**:
-   - `/add-telegram` - Telegram bot integration (full implementation)
-   - `/add-email` - Email IMAP/SMTP integration
-   - `/add-discord` - Discord bot integration (pattern guide)
-   - `/add-slack` - Slack bot integration (pattern guide)
+   - `/add-telegram` - Telegram bot integration
 
 3. **Scheduling**:
    - `/add-cron` - Traditional cron scheduling (exact times)

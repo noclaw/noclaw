@@ -1,182 +1,82 @@
-# Add Cron Scheduling Skill
+# Add Cron Scheduling
 
-Adds advanced cron-based task scheduling to NoClaw.
+When the user runs `/add-cron`, perform ALL of the following steps to replace the simple scheduler with full cron-based scheduling.
 
-## What This Skill Does
+## Background
 
-This skill adds traditional cron-style scheduling for users who need exact timing (9am daily, every Monday, etc.) instead of the simpler heartbeat pattern.
+NoClaw ships with `SimpleScheduler` (no cron support) and `HeartbeatScheduler` (periodic checks). The `/schedule`, `/tasks/{user}`, and `/tasks/{task_id}` endpoints already exist in `assistant.py` but return 501 when `SimpleScheduler` is active. This skill replaces `SimpleScheduler` with `CronScheduler` to enable those endpoints.
 
-**Use this skill when you need:**
-- Exact time scheduling (9:00 AM daily)
-- Multiple independent tasks
-- Different schedules for different tasks
-- Traditional cron syntax
+## Step 1: Install dependency
 
-**Don't use this skill if:**
-- Simple periodic checks are enough (use heartbeat instead)
-- You want one turn to check multiple things (heartbeat is better)
-- You don't need exact timing
-
-## What This Skill Adds
-
-### Files Added
-- `server/cron_scheduler.py` - Full cron scheduler implementation
-- `docs/CRON.md` - Cron scheduling documentation
-
-### Dependencies Added
-- `croniter` - Cron expression parsing
-
-### API Endpoints Added
-- `POST /schedule` - Schedule a cron task
-- `GET /tasks/{user}` - List user's tasks
-- `DELETE /tasks/{task_id}` - Delete a task
-
-### Database Tables Used
-- `scheduled_tasks` - Already exists, just unused without this skill
-
-## Installation
-
-Run this skill to install cron scheduling:
-
+Run:
 ```bash
-/add-cron
+pip install croniter
 ```
 
-Or use the API:
+Verify `croniter` is already in `server/requirements.txt` (it should be). If not, add `croniter>=2.0.1`.
 
-```bash
-curl -X POST http://localhost:3000/webhook \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user": "system",
-    "message": "/add-cron"
-  }'
+## Step 2: Copy `scheduler.py` to `server/cron_scheduler.py`
+
+Copy the reference implementation from `.claude/skills/add-cron/scheduler.py` to `server/cron_scheduler.py`.
+
+**Before copying, verify the reference implementation:**
+- `CronScheduler.__init__` takes `(assistant)` — same interface as `SimpleScheduler`
+- Has `start()`, `stop()`, `add_task()`, `add_cron_task()`, `remove_task()`, `list_user_tasks()`, `get_next_run()` methods
+- Uses `self.assistant.context_manager` for database access
+- Uses `self.assistant.handle_scheduled_task()` for execution
+
+## Step 3: Update `server/assistant.py`
+
+**Change the import** — replace:
+```python
+from .simple_scheduler import SimpleScheduler  # Minimal core scheduler
+```
+with:
+```python
+from .cron_scheduler import CronScheduler
 ```
 
-## Usage After Installation
-
-### Schedule a Task
-
-```bash
-curl -X POST http://localhost:3000/schedule \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user": "alice",
-    "cron": "0 9 * * 1-5",
-    "prompt": "Good morning! What's on my calendar today?",
-    "description": "Daily morning brief"
-  }'
+**Change the initialization** — in `PersonalAssistant.__init__`, replace:
+```python
+self.scheduler = SimpleScheduler(self)  # Minimal scheduler, use /add-cron for full cron
+```
+with:
+```python
+self.scheduler = CronScheduler(self)
 ```
 
-### List Tasks
-
-```bash
-curl http://localhost:3000/tasks/alice
+**Remove the isinstance checks** — The `/schedule`, `/tasks/{user}`, and `/tasks/{task_id}` endpoints have guards like:
+```python
+from .simple_scheduler import SimpleScheduler
+if isinstance(assistant.scheduler, SimpleScheduler):
+    raise HTTPException(status_code=501, ...)
 ```
+Remove these guard blocks from all three endpoints so they use the scheduler directly.
 
-### Delete a Task
+## Step 4: Copy docs
 
-```bash
-curl -X DELETE http://localhost:3000/tasks/123
-```
+Copy `.claude/skills/add-cron/CRON.md` to `docs/CRON.md` if it exists.
 
-## Cron Syntax Quick Reference
+## Step 5: Tell the user what to do next
 
-```
-┌─── minute (0-59)
-│ ┌─── hour (0-23)
-│ │ ┌─── day of month (1-31)
-│ │ │ ┌─── month (1-12)
-│ │ │ │ ┌─── day of week (0-6, Sunday=0)
-│ │ │ │ │
-* * * * *
-```
+After making all code changes, tell the user:
 
-**Examples:**
-- `0 9 * * *` - Every day at 9am
-- `0 9 * * 1-5` - Weekdays at 9am
-- `0 */2 * * *` - Every 2 hours
-- `30 8 * * 1` - Mondays at 8:30am
-- `0 0 1 * *` - First day of every month
-
-## Comparison: Heartbeat vs Cron
-
-### Heartbeat (Default)
-```
-✅ Simple - no cron syntax
-✅ Efficient - one turn checks everything
-✅ Context-aware
-✅ Smart suppression (HEARTBEAT_OK)
-✅ Cost-effective
-
-❌ Approximate timing (every 30 min)
-❌ All checks in one turn
-```
-
-### Cron (This Skill)
-```
-✅ Exact timing (9:00 AM daily)
-✅ Isolated tasks
-✅ Traditional cron syntax
-✅ Multiple independent schedules
-
-❌ More complex
-❌ Less cost-efficient (separate turns)
-❌ No context between tasks
-```
-
-## Implementation Details
-
-This skill:
-1. Installs `croniter` dependency via pip
-2. Copies `server/cron_scheduler.py` to the server directory
-3. Updates `server/assistant.py` to use CronScheduler instead of SimpleScheduler
-4. Adds cron-related API endpoints back
-5. Creates documentation
-
-## Removal
-
-To remove cron scheduling and go back to heartbeat-only:
-
-1. Revert `server/assistant.py` changes:
-   ```python
-   from .scheduler import SimpleScheduler
-   self.scheduler = SimpleScheduler(self)
-   ```
-
-2. Remove the endpoints from `server/assistant.py`
-
-3. Optionally uninstall croniter:
+1. Restart NoClaw: `python run_assistant.py`
+2. Schedule a task:
    ```bash
-   pip uninstall croniter
+   curl -X POST http://localhost:3000/schedule \
+     -H "Content-Type: application/json" \
+     -d '{"user": "alice", "cron": "0 9 * * 1-5", "prompt": "Good morning!", "description": "Daily brief"}'
    ```
+3. Quick cron reference:
+   - `0 9 * * *` — Every day at 9am
+   - `0 9 * * 1-5` — Weekdays at 9am
+   - `0 */2 * * *` — Every 2 hours
+   - `30 8 * * 1` — Mondays at 8:30am
 
-## Cost Comparison
+## Important Notes
 
-**Heartbeat** (checking 5 things every 30 min):
-- 1 check × 48 times/day = 48 API calls
-- ~$0.001 per call (Haiku) × 48 = ~$0.05/day
-
-**Cron** (5 separate tasks hourly):
-- 5 tasks × 24 times/day = 120 API calls
-- ~$0.003 per call (Sonnet) × 120 = ~$0.36/day
-
-For most users, heartbeat is 7x cheaper.
-
-## When to Use Cron
-
-Good use cases for cron:
-- **Exact timing matters**: "Send report at 5pm daily"
-- **Isolated execution**: Tasks are independent
-- **Different schedules**: Some tasks hourly, others daily
-- **Traditional workflows**: Migrating from cron jobs
-
-Good use cases for heartbeat:
-- **Periodic monitoring**: Check email, calendar, notifications
-- **Flexible timing**: "Every 30 minutes is fine"
-- **Multiple checks**: One turn reviews everything
-- **Cost-conscious**: Minimize API calls
-
-## Support
-
-See [docs/CRON.md](../../docs/CRON.md) for full documentation after installation.
+- Do NOT run install.py — make all changes directly
+- The `CronScheduler` has the same `start()`/`stop()` interface as `SimpleScheduler`, so no changes needed to startup/shutdown code
+- `croniter` is already in `server/requirements.txt`
+- The existing `/schedule`, `/tasks`, `/delete` endpoints in assistant.py already have the right request/response format — just remove the 501 guards

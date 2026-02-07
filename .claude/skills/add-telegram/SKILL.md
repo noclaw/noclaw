@@ -1,374 +1,147 @@
-# Add Telegram Bot Skill
+# Add Telegram Bot
 
-Adds Telegram bot integration to NoClaw for chat-based AI assistant access.
+When the user runs `/add-telegram`, perform ALL of the following steps to add Telegram bot support to NoClaw.
 
-## What This Skill Does
+## Step 1: Install dependency
 
-This skill adds a Telegram bot that connects to your NoClaw assistant, allowing you to chat with Claude via Telegram.
-
-**Use this skill when you want:**
-- Chat with your AI assistant via Telegram
-- Mobile access to your assistant
-- Quick voice messages to your assistant
-- Share files and images with Claude
-- Get notifications from heartbeat checks
-
-## What This Skill Adds
-
-### Files Added
-- `server/channels/telegram_bot.py` - Telegram bot implementation
-- `docs/TELEGRAM.md` - Setup and usage documentation
-
-### Dependencies Added
-- `python-telegram-bot` - Telegram Bot API library
-
-### API Changes
-- No new endpoints (uses webhook internally)
-- Bot runs as background service
-
-### Configuration Required
-- Telegram bot token from @BotFather
-- Your Telegram user ID
-- Webhook URL (optional, for production)
-
-## Installation
-
-### Step 1: Create Telegram Bot
-
-1. **Talk to BotFather:**
-   - Open Telegram and search for `@BotFather`
-   - Send `/newbot`
-   - Follow prompts to create your bot
-   - Save the bot token (looks like `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`)
-
-2. **Get Your User ID:**
-   - Search for `@userinfobot` on Telegram
-   - Send `/start`
-   - Note your user ID (numeric)
-
-### Step 2: Install Skill
-
-Run the skill:
+Run:
 ```bash
-/add-telegram
+pip install python-telegram-bot
 ```
 
-Or manually:
-```bash
-python .claude/skills/add-telegram/install.py
-```
+And add `python-telegram-bot>=21.0` to `server/requirements.txt` if not already present.
 
-### Step 3: Configure
+## Step 2: Create `server/channels/` directory
 
-Add to `.env`:
-```bash
-TELEGRAM_BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
-TELEGRAM_USER_ID=123456789
-```
+Create `server/channels/__init__.py` (empty file) if it doesn't exist.
 
-### Step 4: Start Bot
+## Step 3: Create `server/channels/telegram_bot.py`
 
-Restart NoClaw:
-```bash
-python run_assistant.py
-```
+Copy the reference implementation from `.claude/skills/add-telegram/telegram_bot.py` to `server/channels/telegram_bot.py`.
 
-The bot will start automatically and send you a "Bot started!" message.
+**Before copying, verify the reference implementation matches the current assistant.py interface:**
+- `TelegramBot.__init__` takes `(assistant, bot_token, allowed_users)`
+- `handle_message` calls `self.assistant.process_message(user=..., message=..., model_hint=...)`
+- The `process_message` call signature must match `assistant.py`'s `process_message(self, user, message, workspace_path=None, extra_context=None, model_hint=None)`
 
-## Usage
+## Step 4: Wire into `server/assistant.py`
 
-### Basic Chat
+Make these changes to `server/assistant.py`:
 
-Just send messages to your bot:
-```
-You: What's the weather like today?
-Bot: I'll check the weather for you...
-```
-
-### Voice Messages
-
-Send voice messages (Telegram will transcribe):
-```
-🎤 Voice message → Text → Claude
-```
-
-### File Sharing
-
-Send files to share with Claude:
-```
-You: [sends file.py]
-You: Review this code
-
-Bot: I'll review your Python file...
-```
-
-### Photos
-
-Send photos for analysis:
-```
-You: [sends photo]
-You: What's in this image?
-
-Bot: I see...
-```
-
-### Commands
-
-Built-in bot commands:
-- `/start` - Start the bot
-- `/help` - Show help message
-- `/status` - Check bot status
-- `/memory` - View remembered facts
-- `/forget` - Clear memory
-
-## How It Works
-
-### Message Flow
-
-```
-Telegram → Bot → NoClaw Webhook → Container → Claude SDK
-                                              ↓
-Telegram ← Bot ← Response ← Worker ← Container
-```
-
-### User Mapping
-
-Each Telegram user ID maps to a NoClaw user:
-- `telegram_{user_id}` (e.g., `telegram_123456789`)
-- Separate workspace and memory per user
-- Isolated contexts
-
-### Security
-
-- Bot only responds to authorized user IDs
-- List configured in `TELEGRAM_USER_ID` (comma-separated for multiple)
-- Unknown users get "Unauthorized" message
-
-### Heartbeat Integration
-
-When heartbeat detects something important:
+**Add import** (after other imports from `.`):
 ```python
-# In heartbeat result handler
-if user has telegram:
-    send_telegram_message(user, heartbeat_result)
+from .channels.telegram_bot import TelegramBot
 ```
 
-## Configuration Options
+**Add to `PersonalAssistant.__init__`** (after `self.dashboard = ...`):
+```python
+# Telegram bot (if configured)
+bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+if bot_token:
+    allowed_users = [u.strip() for u in os.getenv("TELEGRAM_USER_ID", "").split(",") if u.strip()]
+    self.telegram_bot = TelegramBot(self, bot_token, allowed_users)
+else:
+    self.telegram_bot = None
+```
 
-### Environment Variables
+**Add to `startup_event`** (after heartbeat start):
+```python
+if assistant.telegram_bot:
+    await assistant.telegram_bot.start()
+    logger.info("Telegram bot started")
+```
 
+**Add to `shutdown` method** (before existing shutdown logic):
+```python
+if self.telegram_bot:
+    await self.telegram_bot.stop()
+```
+
+## Step 5: Add env vars to `.env.example`
+
+Add these lines to `.env.example` (if not already present):
 ```bash
-# Required
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_USER_ID=your_user_id
-
-# Optional
-TELEGRAM_ALLOWED_USERS=123,456,789  # Multiple users
-TELEGRAM_WEBHOOK_URL=https://your-domain.com/telegram  # For production
-TELEGRAM_MODEL_HINT=sonnet  # Default model (haiku/sonnet/opus)
+# Telegram Bot (optional - add via /add-telegram skill)
+# TELEGRAM_BOT_TOKEN=your_bot_token_from_botfather
+# TELEGRAM_USER_ID=your_numeric_telegram_id
+# TELEGRAM_MODEL_HINT=sonnet
 ```
 
-### Multiple Users
+## Step 6: Create `docs/TELEGRAM.md`
 
-Allow multiple Telegram users:
+Create a reference doc at `docs/TELEGRAM.md` covering:
+- How the bot works (message flow: Telegram -> Bot -> NoClaw webhook -> Container -> Claude)
+- User mapping (`telegram_{user_id}`)
+- Available bot commands (/start, /help, /status, /memory, /forget)
+- Supported message types (text, documents, photos)
+- Environment variables (TELEGRAM_BOT_TOKEN, TELEGRAM_USER_ID, TELEGRAM_MODEL_HINT)
+- How to allow multiple users (comma-separated TELEGRAM_USER_ID)
+- Troubleshooting (bot not responding, unauthorized errors)
+- How to remove the integration
+
+Keep it concise — this is a reference, not a tutorial. The interactive setup in Step 7 handles the tutorial part.
+
+## Step 7: Walk the user through Telegram setup
+
+After completing all code changes, guide the user interactively through setup. Ask questions and wait for answers at each step.
+
+**7a. Create the bot:**
+
+Tell the user:
+> To create your Telegram bot:
+> 1. Open Telegram and search for **@BotFather**
+> 2. Send `/newbot`
+> 3. Choose a name (e.g. "My Assistant") and username (e.g. "my_noclaw_bot")
+> 4. BotFather will give you a token like `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`
+
+Then ask: "What is your bot token from BotFather?"
+
+**7b. Get user ID:**
+
+Tell the user:
+> To get your Telegram user ID:
+> 1. Search for **@userinfobot** on Telegram
+> 2. Send `/start`
+> 3. It will reply with your numeric user ID
+
+Then ask: "What is your Telegram user ID?"
+
+**7c. Write to `.env`:**
+
+Once you have both values, add them to the `.env` file:
+```
+TELEGRAM_BOT_TOKEN=<their token>
+TELEGRAM_USER_ID=<their user ID>
+```
+
+If the `.env` file doesn't exist, create it from `.env.example`.
+
+**7d. Optional model hint:**
+
+Ask the user which default model they want for Telegram messages:
+- **haiku** — fastest, cheapest (~$0.001/msg)
+- **sonnet** — balanced (default, ~$0.003/msg)
+- **opus** — most capable (~$0.015/msg)
+
+Add `TELEGRAM_MODEL_HINT=<choice>` to `.env`.
+
+**7e. Verify and tell user to restart:**
+
+Verify the import works:
 ```bash
-TELEGRAM_ALLOWED_USERS=123456789,987654321,555555555
+python -c "from server.channels.telegram_bot import TelegramBot; print('OK')"
 ```
 
-Each user gets their own:
-- Workspace: `data/workspaces/telegram_123456789/`
-- Memory: `data/workspaces/telegram_123456789/memory.md`
-- Context: Isolated from other users
+Then tell the user:
+> Telegram bot is configured! Restart NoClaw to activate:
+> ```
+> python run_assistant.py
+> ```
+> Then send `/start` to your bot on Telegram to test it.
 
-## Advanced Features
+## Important Notes
 
-### Custom Commands
-
-Edit `server/channels/telegram_bot.py`:
-
-```python
-@bot.command("remind")
-async def remind_command(update, context):
-    """Custom reminder command"""
-    await update.message.reply_text("Reminder set!")
-```
-
-### Heartbeat Notifications
-
-Enable in heartbeat.py:
-```python
-# If heartbeat finds something important
-if result != "HEARTBEAT_OK":
-    telegram_bot.send_message(user_id, result)
-```
-
-### File Processing
-
-Bot automatically:
-- Accepts documents (.pdf, .txt, .py, etc.)
-- Downloads to workspace
-- Includes file path in prompt
-- Claude can read and process files
-
-### Voice Message Transcription
-
-Telegram automatically transcribes voice messages:
-- Send voice message
-- Telegram converts to text
-- Text sent to Claude
-- Response sent back
-
-## Deployment
-
-### Local Development
-
-Run locally with polling:
-```python
-# In telegram_bot.py
-application.run_polling()
-```
-
-### Production (Webhook)
-
-Use webhook for better reliability:
-
-1. **Set webhook URL:**
-   ```bash
-   TELEGRAM_WEBHOOK_URL=https://yourdomain.com/telegram
-   ```
-
-2. **Configure HTTPS:**
-   - Telegram requires HTTPS
-   - Use nginx/caddy as reverse proxy
-   - Get SSL cert (Let's Encrypt)
-
-3. **Update bot:**
-   ```python
-   # In telegram_bot.py
-   application.run_webhook(
-       listen="0.0.0.0",
-       port=8443,
-       webhook_url=TELEGRAM_WEBHOOK_URL
-   )
-   ```
-
-## Troubleshooting
-
-### Bot Not Responding
-
-1. Check token is correct:
-   ```bash
-   echo $TELEGRAM_BOT_TOKEN
-   ```
-
-2. Check bot is running:
-   ```bash
-   curl http://localhost:3000/health
-   ```
-
-3. Check logs:
-   ```bash
-   tail -f data/noclaw.log | grep telegram
-   ```
-
-### "Unauthorized" Message
-
-- Verify your user ID is in `TELEGRAM_USER_ID`
-- Check spelling/formatting in .env
-- Restart server after changing .env
-
-### Messages Not Reaching Claude
-
-- Check NoClaw is running
-- Check container is working
-- Test webhook directly:
-  ```bash
-  curl -X POST http://localhost:3000/webhook \
-    -H "Content-Type: application/json" \
-    -d '{"user": "telegram_123", "message": "test"}'
-  ```
-
-## Cost Optimization
-
-Telegram messages use the same model hints as API:
-
-**Default (Sonnet):** ~$0.003 per message
-**Haiku:** ~$0.001 per message (set `TELEGRAM_MODEL_HINT=haiku`)
-**Opus:** ~$0.015 per message (for complex tasks)
-
-To minimize costs:
-1. Set `TELEGRAM_MODEL_HINT=haiku` for most messages
-2. Use explicit model switching in messages:
-   - "Hey @haiku, quick question..."
-   - "Hey @opus, analyze this in depth..."
-
-## Privacy & Security
-
-- Bot token is secret - never commit to git
-- Only authorized users can chat
-- Each user has isolated workspace
-- Messages stored in local database only
-- No data sent to Telegram except responses
-
-## Examples
-
-### Daily Briefing
-
-```
-You: Morning briefing please
-
-Bot: Good morning! Here's your briefing:
-- 3 unread emails
-- Meeting at 10am: Sprint Planning
-- No urgent notifications
-Have a great day!
-```
-
-### Quick Calculation
-
-```
-You: What's 15% tip on $142.50?
-
-Bot: 15% tip on $142.50 is $21.38
-Total with tip: $163.88
-```
-
-### Code Review
-
-```
-You: [sends Python file]
-You: Any issues with this code?
-
-Bot: I reviewed your code. Here are some suggestions:
-1. Line 23: Consider using pathlib instead of os.path
-2. Line 45: This could raise KeyError, add try/except
-3. Line 67: Function is doing too much, consider splitting
-
-Overall structure looks good!
-```
-
-## Removal
-
-To remove Telegram integration:
-
-1. **Stop the bot:**
-   - Remove from startup in assistant.py
-   - Or comment out bot initialization
-
-2. **Remove dependencies:**
-   ```bash
-   pip uninstall python-telegram-bot
-   ```
-
-3. **Clean .env:**
-   - Remove TELEGRAM_* variables
-
-4. **Revoke bot token:**
-   - Talk to @BotFather
-   - `/revoke` to disable bot
-
-## See Also
-
-- [python-telegram-bot documentation](https://docs.python-telegram-bot.org/)
-- [Telegram Bot API](https://core.telegram.org/bots/api)
-- [BotFather commands](https://core.telegram.org/bots/features#botfather)
+- Do NOT run install.py — make all changes directly
+- Verify imports work before telling the user you're done
+- If `server/channels/` already exists, don't overwrite existing files in it
+- Never commit the `.env` file — it contains secrets

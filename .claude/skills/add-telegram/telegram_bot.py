@@ -260,12 +260,7 @@ Check docs/TELEGRAM.md for detailed documentation.
             await update.message.reply_text("⛔ Unauthorized")
             return
 
-        # Telegram provides transcription in voice.text
-        if update.message.voice and hasattr(update.message, 'text'):
-            # Use transcription if available
-            await self.handle_message(update, context)
-        else:
-            await update.message.reply_text("🎤 Voice message received, but transcription not available. Please enable in Telegram settings or send text instead.")
+        await update.message.reply_text("🎤 Voice messages aren't supported yet. Please send text instead.")
 
     async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle document uploads"""
@@ -329,7 +324,7 @@ Check docs/TELEGRAM.md for detailed documentation.
                 model_hint=os.getenv("TELEGRAM_MODEL_HINT", "sonnet")
             )
 
-            await update.message.reply_text(result.get("response"))
+            await update.message.reply_text(result.get("response", "Photo received."))
 
     async def send_message(self, telegram_user_id: int, message: str):
         """Send message to user (for heartbeat notifications)"""

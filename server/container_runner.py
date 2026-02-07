@@ -111,6 +111,7 @@ class ContainerRunner:
             "context": context.get("extra_context", {}),
             "user": user,
             "history": context.get("history", []),
+            "model_hint": context.get("model_hint"),
         }
 
         # Create temporary file for input
@@ -315,6 +316,7 @@ class LocalContainerRunner:
             "context": context.get("extra_context", {}),
             "user": user,
             "history": context.get("history", []),
+            "model_hint": context.get("model_hint"),
         }
 
         # Create temporary workspace symlink if needed

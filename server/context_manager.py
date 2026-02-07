@@ -341,6 +341,24 @@ class ContextManager:
         else:
             logger.debug(f"Skipped duplicate memory for {user_id}")
 
+    def remove_memory(self, user_id: str, search: str):
+        """Remove memory lines matching search string (case-insensitive)"""
+        context = self.get_user_context(user_id)
+        workspace = Path(context["workspace_path"])
+        memory_file = workspace / "memory.md"
+
+        if not memory_file.exists():
+            return
+
+        lines = memory_file.read_text().splitlines()
+        search_lower = search.lower()
+        kept = [line for line in lines if search_lower not in line.lower()]
+
+        if len(kept) < len(lines):
+            memory_file.write_text("\n".join(kept) + "\n")
+            removed = len(lines) - len(kept)
+            logger.info(f"Removed {removed} memory line(s) for {user_id} matching: {search[:50]}")
+
     def clear_memory(self, user_id: str):
         """Clear user's memory (use with caution)"""
         context = self.get_user_context(user_id)
@@ -453,24 +471,36 @@ You are a personal AI assistant helping {user_id} with various tasks.
 - Suggest task scheduling when appropriate
 
 ## Memory System
-You have access to a persistent memory system:
+You have a persistent memory managed through special markers in your response.
+Do NOT use file tools to write to memory.md — the system handles it automatically.
 
-- **memory.md** (`/workspace/memory.md`): Persistent facts about the user
-  - Read this file to remember important information
-  - Use the Write tool to append new facts (don't duplicate existing ones)
-  - Include date in your additions for context
+To save a fact, include this exact format on its own line:
+REMEMBER: <fact>
 
-- **Conversation History**: Last {MAX_RECENT_HISTORY} exchanges are provided automatically
-  - Older conversations are archived but not automatically loaded
-  - Focus on memory.md for long-term retention of important facts
+To correct a fact, FORGET the old one then REMEMBER the new one:
+FORGET: <search text that matches the old fact>
+REMEMBER: <corrected fact>
+
+Example — saving:
+REMEMBER: User's name is Alice
+
+Example — correcting:
+FORGET: name is Alice
+REMEMBER: User's name is Bob
+
+Rules:
+- You MUST include the REMEMBER:/FORGET: lines in your response for memory to be saved
+- Simply saying "I'll remember that" does NOT save anything — the marker is required
+- One fact per REMEMBER: line
+- Don't duplicate facts already in your Remembered Facts section
+- Conversation history (last {MAX_RECENT_HISTORY} exchanges) is provided automatically
 
 ## What to Remember
-Store in memory.md when you learn:
+Use REMEMBER: when you learn:
 - User preferences and habits
 - Project names and details
 - Important dates or deadlines
 - Recurring needs or requests
-- Tool preferences
 - Names of people, teams, or systems
 
 ## User Workspace

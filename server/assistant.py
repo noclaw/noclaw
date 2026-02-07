@@ -126,11 +126,40 @@ class PersonalAssistant:
         try:
             result = await self.runner.run(execution_context)
 
+            response_text = result.get("response", "")
+
+            # Extract memory commands from response
+            # FORGET: lines are processed first so REMEMBER: can replace old facts
+            clean_lines = []
+            remembers = []
+            forgets = []
+            for line in response_text.split("\n"):
+                stripped = line.strip()
+                if stripped.startswith("FORGET:"):
+                    search = stripped[len("FORGET:"):].strip()
+                    if search:
+                        forgets.append(search)
+                elif stripped.startswith("REMEMBER:"):
+                    fact = stripped[len("REMEMBER:"):].strip()
+                    if fact:
+                        remembers.append(fact)
+                else:
+                    clean_lines.append(line)
+
+            for search in forgets:
+                self.context_manager.remove_memory(user, search)
+                logger.info(f"Forgot memory for {user}: {search[:50]}...")
+            for fact in remembers:
+                self.context_manager.append_memory(user, fact)
+                logger.info(f"Saved memory for {user}: {fact[:50]}...")
+
+            result["response"] = "\n".join(clean_lines).strip()
+
             # Store in history with model info
             self.context_manager.add_message(
                 user_id=user,
                 message=message,
-                response=result.get("response", ""),
+                response=result["response"],
                 model_used=result.get("model_used"),
                 tokens_used=result.get("tokens_used")
             )

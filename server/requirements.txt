@@ -7,8 +7,8 @@ pydantic>=2.5.0
 python-multipart>=0.0.6
 python-dotenv>=1.0.0
 
-# Claude Code SDK (optional - install manually if available)
-# claude-agent-sdk>=0.1.0
+# Agent orchestration
+agentpool @ file:///Users/jeff/code/agentpool
 
 # Scheduler dependencies
 croniter>=2.0.1
@@ -17,10 +17,13 @@ croniter>=2.0.1
 aiohttp>=3.9.1
 httpx>=0.25.2
 
+# Channel plugins (optional — install for the channels you want)
+python-telegram-bot>=21.0  # Telegram channel
+slack-bolt>=1.18.0         # Slack channel
+
 # Development and testing
 pytest>=7.4.3
 pytest-asyncio>=0.21.1
-
 
 # System monitoring
 psutil>=5.9.0  # For dashboard system stats

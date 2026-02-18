@@ -31,15 +31,25 @@ else:
     print("\n✅ API credentials found!")
 
 # Check other configurations
-print("\nOther Settings:")
+print("\nSettings:")
 print(f"  PORT: {os.getenv('PORT', '3000')}")
 print(f"  DATA_DIR: {os.getenv('DATA_DIR', 'data')}")
-print(f"  WORKER_IMAGE: {os.getenv('WORKER_IMAGE', 'noclaw-worker:latest')}")
-print(f"  CONTAINER_TIMEOUT: {os.getenv('CONTAINER_TIMEOUT', '120')}")
-print(f"  CONTAINER_MEMORY_LIMIT: {os.getenv('CONTAINER_MEMORY_LIMIT', '512m')}")
-print(f"  CONTAINER_CPU_LIMIT: {os.getenv('CONTAINER_CPU_LIMIT', '1.0')}")
+print(f"  SANDBOX_TYPE: {os.getenv('SANDBOX_TYPE', 'local')}")
+print(f"  AGENT_TIMEOUT: {os.getenv('AGENT_TIMEOUT', '300')}")
 print(f"  LOG_LEVEL: {os.getenv('LOG_LEVEL', 'INFO')}")
-print(f"  MOCK_MODE: {os.getenv('MOCK_MODE', 'false')}")
+print(f"  AGENT_LOG_FILE: {os.getenv('AGENT_LOG_FILE', '(not set)')}")
+
+# Check channel configuration
+print("\nChannels:")
+if os.getenv("TELEGRAM_BOT_TOKEN"):
+    print(f"  ✓ Telegram: configured (user {os.getenv('TELEGRAM_USER_ID', '?')})")
+else:
+    print("  ✗ Telegram: not configured")
+
+if os.getenv("SLACK_BOT_TOKEN"):
+    print(f"  ✓ Slack: configured (user {os.getenv('SLACK_USER_ID', '?')})")
+else:
+    print("  ✗ Slack: not configured")
 
 print("\n" + "=" * 50)
 print("To use .env file:")

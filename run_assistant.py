@@ -72,41 +72,20 @@ def check_docker():
     return None
 
 
-def run_with_local():
-    """Run assistant with local runner (no Docker)"""
-    logger.info("Running with local runner (no Docker) - using Claude SDK directly")
-    logger.info("Note: CLAUDE_CODE_OAUTH_TOKEN must be set for Claude SDK to work")
+def run_server(port: int = 3000):
+    """Run the assistant server. Sandbox type is controlled by SANDBOX_TYPE env var."""
+    sandbox = os.getenv("SANDBOX_TYPE", "local")
+    logger.info(f"Starting server with sandbox={sandbox}")
 
-    # Monkey-patch to use local runner
-    import server.container_runner as cr
-    original_runner = cr.ContainerRunner
-    cr.ContainerRunner = cr.LocalContainerRunner
+    if sandbox == "docker":
+        runtime = check_docker()
+        if not runtime:
+            logger.error("SANDBOX_TYPE=docker but no container runtime found. Install Docker or Podman.")
+            sys.exit(1)
+        logger.info(f"Docker sandbox enabled (runtime: {runtime})")
 
-    # Import and run
     import uvicorn
-
-    uvicorn.run("server.assistant:app", host="0.0.0.0", port=3000, reload=False)
-
-
-def run_with_docker(runtime="docker"):
-    """Run assistant with real container support"""
-    logger.info(f"Running with {runtime} container support")
-
-    # Check if worker image exists
-    result = subprocess.run(
-        [runtime, "images", "-q", "noclaw-worker:latest"],
-        capture_output=True,
-        text=True
-    )
-
-    if not result.stdout.strip():
-        logger.warning("Worker image not found. Building...")
-        subprocess.run(["bash", "build_worker.sh"], check=True)
-
-    # Run server
-    import uvicorn
-
-    uvicorn.run("server.assistant:app", host="0.0.0.0", port=3000, reload=False)
+    uvicorn.run("server.assistant:app", host="0.0.0.0", port=port, reload=False)
 
 
 def main():
@@ -114,7 +93,12 @@ def main():
     parser.add_argument(
         "--local",
         action="store_true",
-        help="Run locally without Docker (requires Claude SDK installed)"
+        help="Use local sandbox (no Docker). Same as SANDBOX_TYPE=local"
+    )
+    parser.add_argument(
+        "--docker",
+        action="store_true",
+        help="Use Docker sandbox. Same as SANDBOX_TYPE=docker"
     )
     parser.add_argument(
         "--port",
@@ -143,9 +127,12 @@ def main():
             sys.exit(1)
         print()  # Blank line after validation
 
-    # Check for force local mode from env
-    if os.getenv("LOCAL_MODE", "").lower() == "true":
-        args.local = True
+    # Resolve sandbox type: CLI flags > env var > default (local)
+    if args.docker:
+        os.environ["SANDBOX_TYPE"] = "docker"
+    elif args.local or os.getenv("LOCAL_MODE", "").lower() == "true":
+        os.environ["SANDBOX_TYPE"] = "local"
+    # else: SANDBOX_TYPE env var or default "local" in assistant.py
 
     # Set environment
     os.environ["DATA_DIR"] = args.data_dir
@@ -161,15 +148,7 @@ def main():
         logger.info("Get your token from Claude.ai")
         sys.exit(1)
 
-    if args.local:
-        run_with_local()
-    else:
-        runtime = check_docker()
-        if runtime:
-            run_with_docker(runtime)
-        else:
-            logger.info("No container runtime found, using local runner instead")
-            run_with_local()
+    run_server(port=args.port)
 
 
 if __name__ == "__main__":

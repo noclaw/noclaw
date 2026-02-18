@@ -8,7 +8,7 @@ echo ""
 # Check for Python
 if ! command -v python3 &> /dev/null; then
     echo "❌ Python 3 is required but not found"
-    echo "   Please install Python 3.11 or later"
+    echo "   Please install Python 3.10 or later"
     exit 1
 fi
 echo "✓ Python found"
@@ -19,25 +19,24 @@ echo "Installing Python dependencies..."
 pip install -q -r server/requirements.txt
 echo "✓ Dependencies installed"
 
-# Check for Docker/Podman
-RUNTIME=""
-if command -v docker &> /dev/null; then
-    RUNTIME="docker"
-    echo "✓ Docker found"
-elif command -v podman &> /dev/null; then
-    RUNTIME="podman"
-    echo "✓ Podman found"
+# Check for agentpool
+echo ""
+if python3 -c "import agentpool" 2>/dev/null; then
+    echo "✓ agentpool found"
 else
-    echo "⚠️  No container runtime found (Docker/Podman)"
-    echo "   You can still run locally with: python run_assistant.py --local"
+    echo "⚠️  agentpool not found"
+    echo "   Install it: pip install -e /path/to/agentpool[sdk]"
+    echo "   Or clone: git clone https://github.com/noclaw/agentpool.git ../agentpool"
+    echo "             pip install -e ../agentpool[sdk]"
 fi
 
-# Build container if runtime available
-if [ -n "$RUNTIME" ]; then
-    echo ""
-    echo "Building worker container..."
-    ./build_worker.sh
-    echo "✓ Container built"
+# Check for Docker/Podman (optional)
+if command -v docker &> /dev/null; then
+    echo "✓ Docker found (optional — for SANDBOX_TYPE=docker)"
+elif command -v podman &> /dev/null; then
+    echo "✓ Podman found (optional — for SANDBOX_TYPE=docker)"
+else
+    echo "ℹ️  No container runtime found (optional — default uses local sandbox)"
 fi
 
 # Check for .env file
@@ -52,6 +51,7 @@ CLAUDE_CODE_OAUTH_TOKEN=
 PORT=3000
 DATA_DIR=data
 LOG_LEVEL=INFO
+AGENT_LOG_FILE=data/agents.jsonl
 EOF
     echo "✓ Created .env file"
     echo ""
@@ -64,16 +64,17 @@ echo "================================"
 echo "Setup complete!"
 echo ""
 echo "Next steps:"
-echo "1. Add your Claude OAuth token to .env if not already done:"
+echo "1. Add your Claude OAuth token to .env:"
 echo "   CLAUDE_CODE_OAUTH_TOKEN='your-token-here'"
 echo ""
-echo "2. Run the assistant:"
-if [ -n "$RUNTIME" ]; then
-    echo "   python run_assistant.py          # With Docker isolation (recommended)"
-fi
-echo "   python run_assistant.py --local  # Without Docker"
+echo "2. Install agentpool (if not already done):"
+echo "   pip install -e /path/to/agentpool[sdk]"
 echo ""
-echo "3. Test with curl:"
+echo "3. Run the assistant:"
+echo "   python run_assistant.py          # Local sandbox (default)"
+echo "   python run_assistant.py --docker # Docker sandbox"
+echo ""
+echo "4. Test with curl:"
 echo '   curl -X POST http://localhost:3000/webhook \'
 echo '     -H "Content-Type: application/json" \'
 echo '     -d '"'"'{"user": "test", "message": "Hello, assistant!"}'"'"

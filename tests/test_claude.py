@@ -61,8 +61,8 @@ print(f"Response: {result.get('response', 'No response')}")
 # Check response type
 if "[Mock" in result.get('response', ''):
     print("\n⚠️  Still using MOCK responses. Check that:")
-    print("  1. ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN is set")
-    print("  2. The worker container was rebuilt: ./build_worker.sh")
-    print("  3. The server was restarted after rebuilding")
+    print("  1. CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY is set in .env")
+    print("  2. agentpool is installed: pip install -e /path/to/agentpool[sdk]")
+    print("  3. The server was restarted")
 else:
     print("\n✅ Using REAL Claude SDK responses!")

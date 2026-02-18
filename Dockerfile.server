@@ -1,41 +1,36 @@
-# Server Dockerfile - Runs the FastAPI assistant server
+# NoClaw Server - Runs FastAPI + agentpool (Claude SDK)
 FROM python:3.11-slim
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    docker.io \
-    && rm -rf /var/lib/apt/lists/*
+# Install Node.js (required for Claude Code CLI)
+RUN apt-get update && apt-get install -y curl && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code
 
 # Create non-root user
 RUN useradd -m -s /bin/bash noclaw
 
-# Set working directory
 WORKDIR /app
 
-# Copy requirements first for better caching
+# Install Python dependencies
 COPY server/requirements.txt /app/server/
 RUN pip install --no-cache-dir -r server/requirements.txt
 
 # Copy application code
 COPY server/ /app/server/
-COPY worker/ /app/worker/
 COPY run_assistant.py /app/
-COPY build_worker.sh /app/
 
 # Create data directory
-RUN mkdir -p /app/data /app/workspaces && \
-    chown -R noclaw:noclaw /app
+RUN mkdir -p /app/data && chown -R noclaw:noclaw /app
 
-# Switch to non-root user
 USER noclaw
 
-# Expose port
 EXPOSE 3000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 
-# Run the assistant
 CMD ["python", "run_assistant.py"]

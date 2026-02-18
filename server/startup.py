@@ -39,6 +39,7 @@ class StartupValidator:
         # Run all checks
         checks = [
             ("Python Version", self.check_python_version),
+            ("AgentPool", self.check_agentpool),
             ("Docker/Podman", self.check_container_runtime),
             ("Claude SDK Auth", self.check_claude_auth),
             ("Database Access", self.check_database),
@@ -89,7 +90,9 @@ class StartupValidator:
             return False, f"Python {version.major}.{version.minor} (requires 3.9+)"
 
     def check_container_runtime(self) -> Tuple[bool, str]:
-        """Check Docker or Podman is available"""
+        """Check Docker or Podman is available (optional — only needed for SANDBOX_TYPE=docker)"""
+        sandbox_type = os.getenv("SANDBOX_TYPE", "local")
+
         for runtime in ["docker", "podman"]:
             try:
                 result = subprocess.run(
@@ -107,7 +110,11 @@ class StartupValidator:
                 logger.debug(f"Error checking {runtime}: {e}")
                 continue
 
-        return False, "Docker/Podman not found - install Docker or Podman"
+        if sandbox_type == "docker":
+            return False, "SANDBOX_TYPE=docker but Docker/Podman not found"
+        else:
+            self.warnings.append("Docker/Podman not found (not required for SANDBOX_TYPE=local)")
+            return True, "Not found (optional — using local sandbox)"
 
     def check_claude_auth(self) -> Tuple[bool, str]:
         """Check Claude authentication is configured"""
@@ -193,24 +200,13 @@ class StartupValidator:
 
         return True, "All dependencies installed"
 
-    def check_worker_image(self, runtime: str = "docker") -> Tuple[bool, str]:
-        """Check if worker container image exists"""
+    def check_agentpool(self) -> Tuple[bool, str]:
+        """Check if agentpool is installed"""
         try:
-            result = subprocess.run(
-                [runtime, "images", "-q", "noclaw-worker:latest"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-
-            if result.stdout.strip():
-                return True, "Worker image exists"
-            else:
-                self.warnings.append("Worker image not built - run './build_worker.sh'")
-                return True, "Image missing (will be built on first use)"
-        except Exception as e:
-            logger.debug(f"Error checking worker image: {e}")
-            return True, "Unable to check (assuming OK)"
+            import agentpool
+            return True, "Installed"
+        except ImportError:
+            return False, "agentpool not installed — see QUICKSTART.md"
 
 
 def validate_startup() -> bool:

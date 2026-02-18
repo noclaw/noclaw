@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from server.assistant import PersonalAssistant
-from server.scheduler import SimpleScheduler, CronScheduler
+from server.simple_scheduler import SimpleScheduler
 
 
 def test_simple_scheduler_is_default():
@@ -77,7 +77,7 @@ def test_skill_files_exist():
 
     assert skill_dir.exists(), "Skill directory should exist"
     assert (skill_dir / "SKILL.md").exists(), "SKILL.md should exist"
-    assert (skill_dir / "install.py").exists(), "install.py should exist"
+    assert (skill_dir / "scheduler.py").exists(), "scheduler.py should exist"
     assert (skill_dir / "CRON.md").exists(), "CRON.md should exist"
 
     print("✅ All skill files exist")
@@ -91,15 +91,14 @@ def test_skill_documentation():
     content = skill_md.read_text()
 
     # Check for key sections
-    assert "Add Cron Scheduling Skill" in content, "Should have title"
-    assert "What This Skill Does" in content, "Should explain what it does"
-    assert "Installation" in content, "Should have installation instructions"
-    assert "Comparison: Heartbeat vs Cron" in content, "Should compare approaches"
+    assert "Add Cron Scheduling" in content, "Should have title"
+    assert "Background" in content, "Should have background section"
+    assert "CronScheduler" in content, "Should reference CronScheduler"
+    assert "SimpleScheduler" in content, "Should reference SimpleScheduler"
 
     # Check for helpful information
-    assert "cron syntax" in content.lower(), "Should mention cron syntax"
-    assert "heartbeat" in content.lower(), "Should mention heartbeat alternative"
-    assert "/add-cron" in content, "Should show skill invocation"
+    assert "croniter" in content, "Should mention croniter dependency"
+    assert "assistant.py" in content, "Should reference assistant.py changes"
 
     print("✅ Skill documentation is comprehensive")
 

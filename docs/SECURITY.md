@@ -1,248 +1,135 @@
-# Container Security Model
+# Security Model
 
 ## Overview
 
-NoClaw runs all AI assistant code in isolated Docker containers for security. This document explains what containers can and cannot access.
+NoClaw provides security through two layers:
 
-## Key Principle
+1. **Workspace isolation** — SecurityPolicy validates paths, each user gets a separate workspace
+2. **Optional Docker sandboxing** — shell commands execute inside containers when `SANDBOX_TYPE=docker`
 
-**By default, containers can ONLY access your workspace directory. Everything else requires explicit opt-in.**
+The default mode (`SANDBOX_TYPE=local`) runs agents directly on the host. This is fast and suitable for single-user or development setups. Docker sandboxing adds container isolation for shell commands when needed.
 
-This ensures:
-- Claude cannot accidentally access sensitive files
-- Each user's data is completely isolated
-- No cross-user data leakage
-- Clear security boundaries
+## Workspace Isolation
 
-## What Containers Can See
+### Key Principle
 
-### Default Access (Always Mounted)
+**Each user's workspace is isolated. Agent access is restricted to the user's workspace directory.**
 
 ```
-/workspace → data/workspaces/{your_user_id}/
-  ├── CLAUDE.md        # Your instructions (regenerated each run)
-  ├── memory.md        # Persistent facts Claude learns about you
-  ├── files/           # Your files
-  └── conversations/   # Archived conversations
-
-/input.json (read-only)
-  - Your current message
-  - Conversation history
-  - Context data
+data/workspaces/
+├── alice/
+│   ├── CLAUDE.md        # Alice's instructions
+│   ├── memory.md        # Alice's persistent facts
+│   ├── files/           # Alice's files
+│   └── conversations/   # Alice's archived conversations
+├── bob/
+│   └── ...              # Bob's separate workspace
+└── telegram_12345/
+    └── ...              # Telegram user's workspace
 ```
 
-**Permissions:**
-- Workspace: Read/Write
-- Input JSON: Read-only
+### SecurityPolicy
 
-### What Containers CANNOT See
+The `SecurityPolicy` class in [server/security.py](../server/security.py) validates all workspace paths:
 
-Containers have NO ACCESS to:
-- ❌ Host filesystem outside your workspace
-- ❌ Other users' workspaces
-- ❌ Sensitive paths (see blocked list below)
-- ❌ System directories (`/etc`, `/var`, `/sys`)
-- ❌ Parent directories
+- Workspaces must be under `DATA_DIR/workspaces/`
+- System directories (`/etc`, `/var`, `/sys`, `/usr`) are blocked
+- Sensitive patterns are blocked: `.ssh`, `.aws`, `.env`, `.git/config`, `credentials`, `secrets`
+- Clear error messages explain why paths are rejected
+
+```python
+# In assistant.py — workspace paths validated before use
+from .security import SecurityPolicy
+if not SecurityPolicy().validate_workspace(Path(workspace_path)):
+    raise ValueError(f"Workspace path rejected by security policy: {workspace_path}")
+```
 
 ### Blocked Patterns
 
-The following patterns are **never** allowed to be mounted:
+These patterns are never allowed in workspace paths:
 
-- `.ssh` - SSH keys and config
-- `.aws` - AWS credentials
-- `.env` - Environment files with secrets
-- `.git/config` - Git credentials
-- `credentials` - Generic credential files
-- `secrets` - Secret files
-- `node_modules` - Large dependency directories
-- `.venv` - Python virtual environments
-- `__pycache__` - Python cache files
+- `.ssh` — SSH keys and config
+- `.aws` — AWS credentials
+- `.env` — Environment files with secrets
+- `.git/config` — Git credentials
+- `credentials` — Generic credential files
+- `secrets` — Secret files
+- `node_modules` — Large dependency directories
+- `.venv` — Python virtual environments
+- `__pycache__` — Python cache files
 
-## Optional Additional Mounts
+## Sandbox Modes
 
-If you need Claude to access additional directories (like a project folder), you can configure this per-user.
+NoClaw uses [agentpool](https://github.com/noclaw/agentpool) for agent execution. The sandbox type controls how shell commands run:
 
-### Configuration
+### Local Sandbox (Default)
 
-Create a `config.json` file in your workspace:
-
-```json
-{
-  "additional_mounts": [
-    {
-      "host": "~/projects/myapp",
-      "container": "/projects/myapp",
-      "readonly": true
-    },
-    {
-      "host": "/data/shared",
-      "container": "/data/shared",
-      "readonly": false
-    }
-  ]
-}
+```bash
+python run_assistant.py          # or --local
 ```
 
-**Fields:**
-- `host`: Path on your machine (can use `~` for home directory)
-- `container`: Where to mount inside the container
-- `readonly`: If `true`, Claude can only read (recommended)
+- Agent runs on the host, shell commands execute directly
+- Fast, no container overhead
+- Suitable for single-user setups and development
+- The Claude SDK runs with the same permissions as the NoClaw process
 
-### Validation
+### Docker Sandbox
 
-All additional mounts are validated:
-- ✓ Path must exist
-- ✓ Path must be readable
-- ✓ Path cannot contain blocked patterns
-- ✓ Clear error messages if rejected
-
-### Example Use Cases
-
-**Read a project directory:**
-```json
-{
-  "additional_mounts": [
-    {
-      "host": "~/code/myproject",
-      "container": "/project",
-      "readonly": true
-    }
-  ]
-}
+```bash
+python run_assistant.py --docker
 ```
 
-**Access a shared data directory:**
-```json
-{
-  "additional_mounts": [
-    {
-      "host": "/mnt/data",
-      "container": "/data",
-      "readonly": false
-    }
-  ]
-}
+- Agent runs on the host, shell commands execute inside a Docker container
+- User workspace mounted at `/workspace` inside the container
+- Container runs with `--security-opt no-new-privileges`
+- Resource limits: memory, CPU, timeouts configurable via agentpool
+
+Docker containers provide:
+- Filesystem isolation — agent can only see `/workspace`
+- Process isolation — cannot affect host processes
+- Network control — configurable per container
+- Resource limits — memory and CPU caps
+
+## Webhook Authentication
+
+### API Key Protection
+
+Set `NOCLAW_API_KEY` in `.env` to require authentication on all endpoints:
+
+```bash
+NOCLAW_API_KEY=your-secret-key-here
 ```
 
-## Security Implementation
+Clients authenticate via:
+- `X-API-Key: your-secret-key` header
+- `Authorization: Bearer your-secret-key` header
 
-The security policy is implemented in `server/security.py`:
+If `NOCLAW_API_KEY` is unset, all requests are allowed (development mode).
 
-```python
-class SecurityPolicy:
-    """Simple, clear container security"""
+### Channel Authentication
 
-    BLOCKED_PATTERNS = [
-        ".ssh", ".aws", ".env", ".git/config",
-        "credentials", "secrets", "node_modules",
-        ".venv", "__pycache__"
-    ]
-
-    def validate_workspace(self, path: Path) -> bool:
-        """Validate workspace is in allowed location"""
-        # Must be under DATA_DIR/workspaces/
-        # Cannot contain blocked patterns
-        ...
-
-    def validate_additional_mount(self, path: Path) -> bool:
-        """Validate optional mount request"""
-        # Must exist and be readable
-        # Cannot contain blocked patterns
-        ...
-```
-
-## Error Messages
-
-If a path is rejected, you'll see a clear explanation:
-
-```
-Workspace path rejected by security policy.
-
-Requested workspace: /home/user/invalid
-Allowed workspace root: /data/workspaces
-
-By default, containers can only access workspaces under:
-  /data/workspaces
-
-This ensures secure isolation. Each user's workspace is separate.
-See server/security.py for the full security model.
-```
+Each channel plugin handles its own authentication:
+- **Telegram** — `TELEGRAM_USER_ID` restricts which Telegram users can interact
+- **Slack** — `SLACK_USER_ID` restricts which Slack users can interact
 
 ## Testing Security
 
-Run the security test suite to verify the security model:
-
 ```bash
+# Run the security test suite
 python3 tests/test_security.py
 ```
 
-This tests:
-- ✓ Valid workspaces are accepted
-- ✓ Invalid workspaces are rejected
-- ✓ Blocked patterns are caught
-- ✓ Additional mounts work correctly
-- ✓ Config loading works
+Tests verify:
+- Valid workspaces are accepted
+- Invalid workspaces are rejected
+- Blocked patterns are caught
+- Additional mount validation works
+- Config loading works
 
 ## Best Practices
 
-1. **Start minimal** - Use default workspace-only access first
-2. **Read-only mounts** - Set `readonly: true` for additional mounts unless you need write access
-3. **Specific paths** - Mount only the specific directories you need, not large parent directories
-4. **Avoid sensitive data** - Don't mount directories containing credentials or secrets
-5. **Regular review** - Periodically check your `config.json` and remove unused mounts
-
-## Architecture Diagram
-
-```
-┌─────────────────────────────────────────────┐
-│           Docker Container                  │
-│  ┌────────────────────────────────────┐    │
-│  │ /workspace (read/write)            │    │
-│  │   ├── CLAUDE.md                    │    │
-│  │   ├── memory.md                    │    │
-│  │   └── files/                       │    │
-│  │                                    │    │
-│  │ /input.json (read-only)           │    │
-│  │   ├── prompt                       │    │
-│  │   ├── history                      │    │
-│  │   └── context                      │    │
-│  │                                    │    │
-│  │ /projects/myapp (optional)        │    │
-│  │   └── (if configured)             │    │
-│  └────────────────────────────────────┘    │
-│                                             │
-│  ❌ Cannot access:                         │
-│     - Host filesystem                      │
-│     - Other users' workspaces              │
-│     - ~/.ssh, .env, etc.                  │
-└─────────────────────────────────────────────┘
-```
-
-## FAQ
-
-**Q: Why can't I mount my entire home directory?**
-
-A: For security. Your home directory likely contains SSH keys, AWS credentials, and other sensitive files. Mount only the specific directories you need.
-
-**Q: Can I disable the security checks?**
-
-A: No. Security isolation is a core design principle. However, you can configure additional mounts for legitimate use cases.
-
-**Q: What if I need to access a blocked path?**
-
-A: The blocked patterns protect sensitive data. If you have a legitimate use case, consider:
-1. Moving the needed files to your workspace
-2. Creating a symlink in your workspace
-3. Evaluating if the access is really necessary
-
-**Q: How do I debug mount issues?**
-
-A: Check the logs. They show exactly why a path was rejected with clear error messages.
-
-**Q: Can containers see each other?**
-
-A: No. Each container is completely isolated with its own filesystem view.
-
----
-
-**Security is not optional.** This model protects you from accidental data exposure while still allowing flexibility for legitimate use cases.
+1. **Set `NOCLAW_API_KEY`** in production to protect webhook endpoints
+2. **Use Docker sandbox** when running untrusted or multi-user workloads
+3. **Restrict channel users** — set `TELEGRAM_USER_ID` / `SLACK_USER_ID` to your IDs only
+4. **Don't commit `.env`** — it contains secrets
+5. **Review workspace contents** periodically — users can upload files via channels

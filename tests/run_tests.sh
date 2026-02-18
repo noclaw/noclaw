@@ -1,6 +1,6 @@
 #!/bin/bash
 # NoClaw Test Runner
-# Runs all automated tests for v0.2
+# Runs all automated tests
 
 set -e
 
@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 cd "$(dirname "$0")/.."
 
 echo -e "${BLUE}================================${NC}"
-echo -e "${BLUE}NoClaw v0.2 Test Suite${NC}"
+echo -e "${BLUE}NoClaw Test Suite${NC}"
 echo -e "${BLUE}================================${NC}"
 echo ""
 
@@ -50,7 +50,7 @@ echo -e "\n${BLUE}=== Unit Tests ===${NC}"
 
 run_test "Security Policy" \
     "python3 tests/test_security.py" \
-    "Container workspace validation"
+    "Workspace security validation"
 
 run_test "Enhanced Memory" \
     "python3 tests/test_memory.py" \
@@ -82,9 +82,9 @@ if curl -s http://localhost:3000/health > /dev/null 2>&1; then
         "python3 tests/test_claude.py" \
         "Real Claude SDK responses"
 
-    run_test "Docker Container Test" \
+    run_test "Webhook Smoke Test" \
         "bash tests/test_docker.sh" \
-        "Webhook with Docker containers"
+        "Webhook with real Claude responses"
 else
     echo -e "${YELLOW}⚠️  Server not running at http://localhost:3000${NC}"
     echo "   Skipping integration tests (start with: python run_assistant.py)"
@@ -112,7 +112,7 @@ else
     echo ""
     echo -e "${GREEN}✅ All tests passed!${NC}"
     echo ""
-    echo "NoClaw v0.2 is working correctly."
+    echo "All NoClaw tests passed."
 fi
 
 # Cleanup logs

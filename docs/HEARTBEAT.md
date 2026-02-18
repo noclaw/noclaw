@@ -310,6 +310,6 @@ CREATE TABLE heartbeat_log (
 
 ## See Also
 
-- [ARCHITECTURE.md](../ARCHITECTURE.md) - Heartbeat vs Cron decision
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Heartbeat vs Cron decision
 - [LOGGING.md](LOGGING.md) - Monitoring heartbeat activity
-- [/add-cron skill](.claude/skills/add-cron/) - For exact scheduling needs
+- [/add-cron skill](../.claude/skills/add-cron/) - For exact scheduling needs

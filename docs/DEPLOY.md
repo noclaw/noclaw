@@ -1,208 +1,178 @@
-# NoClaw Deployment Guide
+# Deployment Guide
 
-This guide covers deploying NoClaw to production environments.
+## Deployment Model
 
-## Deployment Architecture
+NoClaw is a single Python process that uses [agentpool](https://github.com/noclaw/agentpool) for Claude SDK orchestration. For production, the recommended pattern is:
 
-NoClaw has two container layers:
+**Containerize the host application (including agentpool) and use `LocalSandbox` — the platform container provides the isolation boundary.**
 
-1. **Server Container** (optional) - The FastAPI server itself
-   - Built with `Dockerfile.server`
-   - Deployed with `docker-compose.yml`
-   - Persistent: runs continuously
+There is no separate worker container. The Claude SDK runs inside the same process as the FastAPI server.
 
-2. **Worker Containers** (required) - Claude SDK execution
-   - Built with `worker/Dockerfile`
-   - Spawned per request by the server
-   - Ephemeral: created and destroyed per request
+```
+Docker Host
+└── noclaw container
+    ├── FastAPI server
+    ├── agentpool (Claude SDK)
+    ├── Channel plugins (Telegram, Slack)
+    └── data/ (mounted volume)
+```
 
 ## Deployment Options
 
-### Option 1: Native Python + Worker Containers (Recommended for Development)
+### Option 1: Native Python (Development)
 
-Run the FastAPI server directly on the host, spawn worker containers as needed.
+Run directly on the host. Simplest setup.
 
-**Pros:**
-- Fast iteration during development
-- Easy to debug server code
-- Direct access to logs
-
-**Setup:**
 ```bash
-# Install dependencies
-pip3 install -r server/requirements.txt
-
-# Build worker container
-./build_worker.sh
-
-# Run server
+pip install -r server/requirements.txt
+pip install -e /path/to/agentpool[sdk]
 python run_assistant.py
 ```
 
-**Architecture:**
-```
-Host Machine
-├── Python FastAPI server (native)
-│   └── Spawns worker containers → Docker
-└── Docker daemon
-    └── Worker containers (ephemeral)
-```
+### Option 2: Docker Container (Production)
 
----
+Build and run with Docker Compose:
 
-### Option 2: Full Docker Deployment (Recommended for Production)
-
-Run both server and workers in containers using docker-compose.
-
-**Pros:**
-- Complete isolation
-- Easy deployment to cloud/VPS
-- Consistent environment
-- Log management
-- Auto-restart policies
-
-**Setup:**
-
-1. **Configure environment:**
 ```bash
-# Create .env file
+# Configure
 cp .env.example .env
-nano .env
-```
+nano .env  # Add CLAUDE_CODE_OAUTH_TOKEN
 
-Add your credentials:
-```env
-CLAUDE_CODE_OAUTH_TOKEN=your-token-here
-PORT=3000
-DATA_DIR=/app/data
-LOG_LEVEL=INFO
-```
-
-2. **Build and run:**
-```bash
-# Build server image and worker image
-docker-compose build
-
-# Start the service
+# Build and start
 docker-compose up -d
 
 # View logs
 docker-compose logs -f
 
-# Check status
-docker-compose ps
+# Check health
+curl http://localhost:3000/health
 ```
 
-**Architecture:**
-```
-Docker Host
-└── docker-compose
-    ├── noclaw-assistant (server container)
-    │   ├── FastAPI server
-    │   ├── Docker CLI (for spawning workers)
-    │   └── Mounts: /var/run/docker.sock
-    └── Worker containers (spawned by server)
-        └── Claude SDK execution
+## Docker Configuration
+
+### Dockerfile.server
+
+The [Dockerfile.server](../Dockerfile.server) builds a container with:
+- Python 3.11
+- NoClaw server code
+- agentpool dependency
+- Claude Code CLI (via Node.js)
+- Non-root user
+
+```dockerfile
+FROM python:3.11-slim
+
+# Install Node.js (required for Claude Code CLI)
+RUN apt-get update && apt-get install -y curl && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code
+
+# Create non-root user
+RUN useradd -m -s /bin/bash noclaw
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY server/requirements.txt /app/server/
+RUN pip install --no-cache-dir -r server/requirements.txt
+
+# Copy application code
+COPY server/ /app/server/
+COPY run_assistant.py /app/
+
+# Create data directory
+RUN mkdir -p /app/data && chown -R noclaw:noclaw /app
+
+USER noclaw
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
+
+CMD ["python", "run_assistant.py"]
 ```
 
----
-
-## Docker Compose Configuration
+### docker-compose.yml
 
 The [docker-compose.yml](../docker-compose.yml) provides:
+- Data persistence via volume mount
+- Health checks with auto-restart
+- Log rotation (10MB, 3 files)
+- Port mapping (default 3000)
+- Environment from `.env` file
 
-### Features
-- **Container-in-container** - Server spawns worker containers via Docker socket
-- **Data persistence** - `./data` mounted for SQLite database
-- **Workspace persistence** - User workspaces mounted
-- **Health checks** - Automatic health monitoring
-- **Auto-restart** - Restarts on failure
-- **Log rotation** - 10MB max, 3 files retained
-- **Port mapping** - Exposes configured port (default 3000)
+**Key:** No Docker socket mount is needed. The container uses `LocalSandbox` — shell commands run directly inside the container, which is already isolated.
 
-### Volumes
 ```yaml
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for spawning workers
-  - ./data:/app/data                           # Database persistence
-  - ${WORKSPACE_ROOT:-./workspaces}:/workspaces # User workspaces
+version: '3.8'
+
+services:
+  noclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - SANDBOX_TYPE=local
+    ports:
+      - "${PORT:-3000}:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 ```
 
-### Environment
-Loads from `.env` file:
-- `CLAUDE_CODE_OAUTH_TOKEN` - Claude authentication (required)
-- `PORT` - Server port (default: 3000)
-- `DATA_DIR` - Data directory (default: /app/data)
-- `LOG_LEVEL` - Logging level (default: INFO)
-- `WORKSPACE_ROOT` - User workspaces location
+## Environment Variables
 
----
-
-## Production Deployment
-
-### Prerequisites
-- Docker Engine 20.10+
-- Docker Compose v2+
-- 2GB+ RAM (1GB for server, 1GB+ for worker containers)
-- 10GB+ disk space
-
-### Security Considerations
-
-1. **Docker Socket Access**
-   - Server needs `/var/run/docker.sock` to spawn workers
-   - This grants Docker API access (required for container-in-container)
-   - Run on trusted host or use rootless Docker
-
-2. **Network Isolation**
-   - Worker containers need internet access for Claude API
-   - Server exposes port 3000 (configure firewall as needed)
-   - Consider using reverse proxy (nginx, Caddy) with TLS
-
-3. **Secrets Management**
-   - Never commit `.env` to version control
-   - Use Docker secrets in production:
-     ```yaml
-     secrets:
-       claude_token:
-         external: true
-     ```
-   - Or use environment injection from orchestrator
-
-4. **API Key Protection**
-   - Set `NOCLAW_API_KEY` in `.env` for webhook authentication
-   - Requires `X-API-Key` header on all requests
-   - Prevents unauthorized access to your assistant
-
-### Cloud Deployment Examples
-
-#### Deploy to VPS (DigitalOcean, Linode, etc.)
-
+Required:
 ```bash
-# SSH to your server
-ssh user@your-server.com
-
-# Clone repository
-git clone https://github.com/your-org/noclaw.git
-cd noclaw
-
-# Configure environment
-cp .env.example .env
-nano .env  # Add your credentials
-
-# Build and start
-docker-compose up -d
-
-# Configure firewall (example for ufw)
-sudo ufw allow 3000/tcp
-
-# Optional: Setup reverse proxy
-# See nginx example below
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...   # Claude authentication
 ```
 
-#### Nginx Reverse Proxy (with TLS)
+Optional:
+```bash
+PORT=3000                    # Server port
+DATA_DIR=data                # Data directory
+LOG_LEVEL=INFO               # DEBUG, INFO, WARNING, ERROR
+AGENT_LOG_FILE=data/agents.jsonl  # Agent performance logs
+AGENT_TIMEOUT=300            # Agent timeout in seconds
+NOCLAW_API_KEY=secret        # Webhook authentication
+SANDBOX_TYPE=local           # local or docker
+
+# Channel plugins
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_USER_ID=...
+SLACK_BOT_TOKEN=...
+SLACK_APP_TOKEN=...
+```
+
+## Production Checklist
+
+1. **Set `NOCLAW_API_KEY`** — protect webhook endpoints
+2. **Set `SANDBOX_TYPE=local`** — the container itself provides isolation
+3. **Mount data volume** — `./data:/app/data` for database and workspace persistence
+4. **Configure log rotation** — via Docker logging driver
+5. **Set up reverse proxy** — nginx or Caddy with TLS for external access
+6. **Restrict channel users** — `TELEGRAM_USER_ID`, `SLACK_USER_ID`
+
+## Reverse Proxy (nginx with TLS)
 
 ```nginx
-# /etc/nginx/sites-available/noclaw
 server {
     listen 443 ssl http2;
     server_name assistant.yourdomain.com;
@@ -217,260 +187,36 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # WebSocket support (for dashboard SSE)
+        # SSE support (for dashboard)
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+        proxy_set_header Connection "";
+        proxy_buffering off;
     }
 }
 ```
-
----
 
 ## Monitoring
 
-### Health Checks
+- **Health:** `curl http://localhost:3000/health`
+- **Dashboard:** `http://localhost:3000/dashboard`
+- **Logs:** `docker-compose logs -f`
+- **Agent performance:** `cat data/agents.jsonl | jq .`
 
-The server exposes a health endpoint:
-```bash
-curl http://localhost:3000/health
-```
-
-Returns:
-```json
-{
-  "status": "healthy",
-  "version": "0.2.0"
-}
-```
-
-### Dashboard
-
-Access the monitoring dashboard:
-```
-http://localhost:3000/dashboard
-```
-
-Shows:
-- Active users
-- Container status
-- System resources
-- Recent logs
-- Heartbeat status
-
-### Logs
-
-**Docker Compose logs:**
-```bash
-# Follow logs
-docker-compose logs -f
-
-# Last 100 lines
-docker-compose logs --tail=100
-
-# Specific service
-docker-compose logs -f noclaw
-```
-
-**Structured logging:**
-- Default format: Human-readable with colors
-- JSON format: Set `LOG_FORMAT=json` in `.env`
-- Log file: Set `LOG_FILE=/app/data/noclaw.log` in `.env`
-
----
-
-## Maintenance
-
-### Backup
-
-**Database:**
-```bash
-# Backup SQLite database
-cp ./data/assistant.db ./data/assistant.db.backup
-
-# Or use SQLite backup
-sqlite3 ./data/assistant.db ".backup ./data/assistant.db.backup"
-```
-
-**User workspaces:**
-```bash
-# Tar backup
-tar -czf workspaces-backup.tar.gz ./data/workspaces/
-
-# Rsync to remote
-rsync -av ./data/workspaces/ user@backup-server:/backups/noclaw/
-```
-
-### Updates
+## Backup
 
 ```bash
-# Pull latest code
+# Database
+sqlite3 data/assistant.db ".backup data/assistant.db.backup"
+
+# Workspaces
+tar -czf workspaces-backup.tar.gz data/workspaces/
+```
+
+## Updates
+
+```bash
 git pull origin main
-
-# Rebuild containers
 docker-compose build
-
-# Restart with new version
 docker-compose up -d
-
-# Check health
 curl http://localhost:3000/health
 ```
-
-### Cleanup
-
-**Remove old worker containers:**
-```bash
-# Worker containers are ephemeral and auto-removed
-# But if cleanup fails, manually remove:
-docker container prune -f
-```
-
-**Remove old images:**
-```bash
-# Remove unused images
-docker image prune -a
-```
-
-**Logs:**
-```bash
-# Clear Docker logs
-truncate -s 0 $(docker inspect --format='{{.LogPath}}' noclaw-assistant)
-```
-
----
-
-## Troubleshooting
-
-### Server won't start
-
-**Check logs:**
-```bash
-docker-compose logs noclaw
-```
-
-**Common issues:**
-- Missing `CLAUDE_CODE_OAUTH_TOKEN` in `.env`
-- Port 3000 already in use (change `PORT` in `.env`)
-- Docker socket not accessible
-
-### Worker containers fail
-
-**Check worker image:**
-```bash
-docker images | grep noclaw-worker
-```
-
-**Rebuild worker:**
-```bash
-./build_worker.sh
-```
-
-**Memory issues:**
-- Worker containers need 1GB+ memory
-- Set `CONTAINER_MEMORY_LIMIT=1g` in `.env`
-
-### Health check failing
-
-**Test directly:**
-```bash
-docker exec noclaw-assistant curl http://localhost:3000/health
-```
-
-**Check server is running:**
-```bash
-docker exec noclaw-assistant ps aux | grep python
-```
-
-### Can't spawn workers
-
-**Check Docker socket:**
-```bash
-docker exec noclaw-assistant docker ps
-```
-
-If this fails, Docker socket isn't mounted correctly.
-
-**Verify volume mount:**
-```bash
-docker inspect noclaw-assistant | grep docker.sock
-```
-
----
-
-## Performance Tuning
-
-### Resource Limits
-
-**Server container** (Dockerfile.server):
-- No explicit limits (adjust in docker-compose.yml if needed)
-- Typically uses 200-500MB RAM
-
-**Worker containers** (built by build_worker.sh):
-- Default: 1GB RAM limit
-- Adjust in `.env`: `CONTAINER_MEMORY_LIMIT=2g`
-- CPU limit: Adjust in `container_runner.py`
-
-### Concurrent Requests
-
-The server handles requests sequentially by default. For concurrent requests:
-- Use multiple server instances behind a load balancer
-- Each server can spawn its own worker containers
-- Share database via network mount or PostgreSQL
-
----
-
-## Scaling
-
-### Horizontal Scaling
-
-Run multiple NoClaw instances behind nginx:
-
-```nginx
-upstream noclaw_backend {
-    server noclaw-1:3000;
-    server noclaw-2:3000;
-    server noclaw-3:3000;
-}
-
-server {
-    location / {
-        proxy_pass http://noclaw_backend;
-    }
-}
-```
-
-**Note:** All instances should share the same database and workspaces via network storage.
-
-### Database Scaling
-
-For high load, migrate from SQLite to PostgreSQL:
-1. Update `context_manager.py` to use PostgreSQL
-2. Update connection strings in `.env`
-3. Use managed PostgreSQL (AWS RDS, DigitalOcean, etc.)
-
----
-
-## Summary
-
-**For Development:**
-```bash
-./setup.sh
-python run_assistant.py
-```
-
-**For Production:**
-```bash
-cp .env.example .env
-# Add CLAUDE_CODE_OAUTH_TOKEN
-docker-compose up -d
-```
-
-**Monitor:**
-- Health: `curl http://localhost:3000/health`
-- Dashboard: `http://localhost:3000/dashboard`
-- Logs: `docker-compose logs -f`
-
----
-
-*This deployment guide covers production-ready NoClaw deployments. For basic setup, see [QUICKSTART.md](../QUICKSTART.md).*

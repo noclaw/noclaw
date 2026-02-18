@@ -1,8 +1,8 @@
 #!/bin/bash
-# Test script for Docker container execution
+# Webhook smoke test - sends requests to a running server
 
-echo "Testing Personal Assistant with Docker Container"
-echo "================================================"
+echo "Testing NoClaw Webhook"
+echo "======================"
 
 # Wait for server to be ready
 echo "Waiting for server to start..."
@@ -19,7 +19,7 @@ for i in {1..10}; do
 done
 
 echo ""
-echo "Testing webhook with Docker container execution..."
+echo "Testing webhook..."
 curl -X POST http://localhost:3000/webhook \
   -H "Content-Type: application/json" \
   -d '{"user": "alice", "message": "Hello from Docker! What time is it?"}' \
@@ -33,4 +33,4 @@ curl -X POST http://localhost:3000/webhook \
   | python -m json.tool
 
 echo ""
-echo "Docker container test complete!"
+echo "Webhook test complete!"

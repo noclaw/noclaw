@@ -19,7 +19,7 @@ load_dotenv()
 
 from agentpool import AgentPool, Task, SessionResult, SessionStatus, AgentPoolConfig
 from .context_manager import ContextManager
-from .cron_scheduler import CronScheduler
+from .simple_scheduler import SimpleScheduler  # Minimal core scheduler
 from .heartbeat import HeartbeatScheduler
 from .dashboard import Dashboard, stream_events
 
@@ -91,7 +91,7 @@ class PersonalAssistant:
         self.agent_timeout = int(os.getenv("AGENT_TIMEOUT", "300"))
         _log_file = os.getenv("AGENT_LOG_FILE")
         self.agent_log_file = Path(_log_file) if _log_file else None
-        self.scheduler = CronScheduler(self)
+        self.scheduler = SimpleScheduler(self)  # Minimal scheduler, use /add-cron for full cron
         self.heartbeat = HeartbeatScheduler(self, default_interval=1800)  # 30 min default
         self.dashboard = Dashboard(self)  # Monitoring dashboard
         self.channels = []  # Auto-discovered channel plugins
@@ -521,6 +521,8 @@ async def schedule_task(request: ScheduleRequest):
 
     Full cron support enabled with CronScheduler.
     """
+    if isinstance(assistant.scheduler, SimpleScheduler):
+        raise HTTPException(status_code=501, detail="Cron scheduling not enabled. Run /add-cron skill to enable.")
     try:
         task_id = assistant.scheduler.add_cron_task(
             user=request.user,
@@ -547,6 +549,8 @@ async def list_tasks(user: str):
 
     For heartbeat info, use GET /heartbeat/{user}/status.
     """
+    if isinstance(assistant.scheduler, SimpleScheduler):
+        raise HTTPException(status_code=501, detail="Cron scheduling not enabled. Run /add-cron skill to enable.")
     tasks = assistant.scheduler.list_user_tasks(user)
     return {"user": user, "tasks": tasks}
 
@@ -554,6 +558,8 @@ async def list_tasks(user: str):
 @app.delete("/tasks/{task_id}", dependencies=[Depends(verify_api_key)])
 async def delete_task(task_id: str):
     """Delete a scheduled task"""
+    if isinstance(assistant.scheduler, SimpleScheduler):
+        raise HTTPException(status_code=501, detail="Cron scheduling not enabled. Run /add-cron skill to enable.")
     if assistant.scheduler.remove_task(task_id):
         return {"status": "deleted", "task_id": task_id}
     else:

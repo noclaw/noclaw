@@ -95,6 +95,14 @@ curl -X POST http://localhost:3000/webhook \
 
 You should see a real Claude response.
 
+**Note:** If you set `NOCLAW_API_KEY` in `.env`, you must pass it in the request:
+```bash
+curl -X POST http://localhost:3000/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{"user": "test", "message": "What is 2+2?"}'
+```
+
 ## Step 5: Add Channels (Optional)
 
 ### Telegram

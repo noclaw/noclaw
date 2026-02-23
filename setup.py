@@ -845,9 +845,12 @@ def print_next_steps() -> None:
     print()
     step += 1
 
+    api_key = env.get("NOCLAW_API_KEY", "")
     print(f"  {step}. Test with curl:")
     print('     curl -X POST http://localhost:3000/webhook \\')
     print('       -H "Content-Type: application/json" \\')
+    if api_key and api_key not in PLACEHOLDERS:
+        print(f'       -H "X-API-Key: {api_key}" \\')
     print("       -d '{\"user\": \"test\", \"message\": \"Hello!\"}'")
     print()
     step += 1

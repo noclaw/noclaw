@@ -7,10 +7,9 @@ services:
       dockerfile: Dockerfile.server
     volumes:
       - ./data:/app/data
+      - ./workspace:/app/workspace
     env_file:
       - .env
-    environment:
-      - SANDBOX_TYPE=local
     ports:
       - "${PORT:-3000}:3000"
     restart: unless-stopped

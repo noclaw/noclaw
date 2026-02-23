@@ -199,7 +199,7 @@ Keep it concise (1-2 sentences max).
 
     def _create_default_heartbeat(self, user_id: str, heartbeat_file: Path):
         """Create default HEARTBEAT.md file"""
-        default_content = f"""# Heartbeat Checklist for {user_id}
+        default_content = """# Heartbeat Checklist
 
 This checklist is reviewed every heartbeat (default: 30 minutes).
 

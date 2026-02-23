@@ -20,22 +20,25 @@ def test_workspace_validation():
     print("\n=== Testing Workspace Validation ===\n")
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Create a data directory structure
-        data_dir = Path(tmpdir) / "data"
-        workspaces = data_dir / "workspaces"
-        workspaces.mkdir(parents=True)
+        # Create a workspace directory
+        workspace_dir = Path(tmpdir) / "workspace"
+        workspace_dir.mkdir()
 
-        policy = SecurityPolicy(data_dir=str(data_dir))
+        policy = SecurityPolicy(workspace_dir=workspace_dir)
 
-        # Test 1: Valid workspace (under workspaces/)
-        valid_workspace = workspaces / "alice"
-        valid_workspace.mkdir(parents=True)
+        # Test 1: Valid workspace (the workspace dir itself)
+        result = policy.validate_workspace(workspace_dir)
+        assert result is True, "Workspace dir should be accepted"
+        print("✓ Valid workspace accepted:", workspace_dir)
 
-        result = policy.validate_workspace(valid_workspace)
-        assert result is True, "Valid workspace should be accepted"
-        print("✓ Valid workspace accepted:", valid_workspace)
+        # Test 2: Valid workspace (subdirectory of workspace)
+        subdir = workspace_dir / "files"
+        subdir.mkdir()
+        result = policy.validate_workspace(subdir)
+        assert result is True, "Subdirectory of workspace should be accepted"
+        print("✓ Workspace subdirectory accepted:", subdir)
 
-        # Test 2: Invalid workspace (outside workspaces/)
+        # Test 3: Invalid workspace (outside workspace/)
         invalid_workspace = Path(tmpdir) / "other"
         invalid_workspace.mkdir(parents=True)
 
@@ -43,16 +46,16 @@ def test_workspace_validation():
         assert result is False, "Workspace outside allowed root should be rejected"
         print("✓ Outside workspace rejected:", invalid_workspace)
 
-        # Test 3: Workspace with blocked pattern (.ssh)
-        blocked_workspace = workspaces / "bob" / ".ssh"
+        # Test 4: Workspace with blocked pattern (.ssh)
+        blocked_workspace = workspace_dir / ".ssh"
         blocked_workspace.mkdir(parents=True)
 
         result = policy.validate_workspace(blocked_workspace)
         assert result is False, "Workspace with .ssh should be rejected"
         print("✓ Blocked pattern (.ssh) rejected:", blocked_workspace)
 
-        # Test 4: Workspace with .env pattern
-        env_workspace = workspaces / "charlie" / ".env"
+        # Test 5: Workspace with .env pattern
+        env_workspace = workspace_dir / ".env"
         env_workspace.mkdir(parents=True)
 
         result = policy.validate_workspace(env_workspace)
@@ -65,11 +68,10 @@ def test_additional_mounts():
     print("\n=== Testing Additional Mounts ===\n")
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        data_dir = Path(tmpdir) / "data"
-        workspaces = data_dir / "workspaces"
-        workspaces.mkdir(parents=True)
+        workspace_dir = Path(tmpdir) / "workspace"
+        workspace_dir.mkdir()
 
-        policy = SecurityPolicy(data_dir=str(data_dir))
+        policy = SecurityPolicy(workspace_dir=workspace_dir)
 
         # Create a valid additional mount path
         valid_mount = Path(tmpdir) / "projects" / "myapp"
@@ -100,12 +102,10 @@ def test_config_loading():
     print("\n=== Testing Config Loading ===\n")
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        data_dir = Path(tmpdir) / "data"
-        workspaces = data_dir / "workspaces"
-        alice_workspace = workspaces / "alice"
-        alice_workspace.mkdir(parents=True)
+        workspace_dir = Path(tmpdir) / "workspace"
+        workspace_dir.mkdir()
 
-        policy = SecurityPolicy(data_dir=str(data_dir))
+        policy = SecurityPolicy(workspace_dir=workspace_dir)
 
         # Create valid mount directories
         project_dir = Path(tmpdir) / "projects" / "myapp"
@@ -122,11 +122,11 @@ def test_config_loading():
             ]
         }
 
-        config_path = alice_workspace / "config.json"
+        config_path = workspace_dir / "config.json"
         config_path.write_text(json.dumps(config, indent=2))
 
         # Load mounts
-        mounts = policy.load_additional_mounts(alice_workspace)
+        mounts = policy.load_additional_mounts(workspace_dir)
 
         assert len(mounts) == 1, "Should load 1 mount from config"
         assert mounts[0]["container"] == "/projects/myapp"
@@ -148,7 +148,7 @@ def test_config_loading():
         }
 
         config_path.write_text(json.dumps(bad_config, indent=2))
-        mounts = policy.load_additional_mounts(alice_workspace)
+        mounts = policy.load_additional_mounts(workspace_dir)
 
         assert len(mounts) == 0, "Should reject mount with blocked pattern"
         print("✓ Blocked mount rejected from config")

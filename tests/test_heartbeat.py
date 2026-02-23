@@ -22,6 +22,16 @@ from server.heartbeat import HeartbeatScheduler
 from server.assistant import PersonalAssistant
 
 
+def _setup_workspace(tmpdir):
+    """Helper to create shared workspace structure for tests"""
+    workspace_dir = tmpdir / "workspace"
+    workspace_dir.mkdir()
+    (workspace_dir / "files").mkdir()
+    (workspace_dir / "conversations").mkdir()
+    (workspace_dir / "memory.md").write_text("# Memory\n\n")
+    return workspace_dir
+
+
 def test_heartbeat_enablement():
     """Test enabling and disabling heartbeat for users"""
     print("\n=== Test: Heartbeat Enablement ===")
@@ -29,9 +39,10 @@ def test_heartbeat_enablement():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
         db_path = tmpdir / "test.db"
+        workspace_dir = _setup_workspace(tmpdir)
 
         # Create context manager
-        cm = ContextManager(db_path)
+        cm = ContextManager(db_path, workspace_dir)
 
         # Create mock assistant
         class MockAssistant:
@@ -85,9 +96,10 @@ def test_heartbeat_md_creation():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
         db_path = tmpdir / "test.db"
+        workspace_dir = _setup_workspace(tmpdir)
 
         # Create context manager
-        cm = ContextManager(db_path)
+        cm = ContextManager(db_path, workspace_dir)
 
         # Create mock assistant
         class MockAssistant:
@@ -112,7 +124,6 @@ def test_heartbeat_md_creation():
         content = heartbeat_file.read_text()
         assert "Heartbeat Checklist" in content, "Should contain checklist header"
         assert "HEARTBEAT_OK" in content, "Should mention HEARTBEAT_OK pattern"
-        assert user_id in content, "Should include user ID"
 
         print("✅ HEARTBEAT.md creation works correctly")
 
@@ -124,9 +135,10 @@ def test_get_users_for_heartbeat():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
         db_path = tmpdir / "test.db"
+        workspace_dir = _setup_workspace(tmpdir)
 
         # Create context manager
-        cm = ContextManager(db_path)
+        cm = ContextManager(db_path, workspace_dir)
 
         # Create mock assistant
         class MockAssistant:
@@ -169,9 +181,10 @@ def test_heartbeat_logging():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
         db_path = tmpdir / "test.db"
+        workspace_dir = _setup_workspace(tmpdir)
 
         # Create context manager
-        cm = ContextManager(db_path)
+        cm = ContextManager(db_path, workspace_dir)
 
         # Create mock assistant
         class MockAssistant:
@@ -226,9 +239,10 @@ def test_last_heartbeat_update():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
         db_path = tmpdir / "test.db"
+        workspace_dir = _setup_workspace(tmpdir)
 
         # Create context manager
-        cm = ContextManager(db_path)
+        cm = ContextManager(db_path, workspace_dir)
 
         # Create mock assistant
         class MockAssistant:

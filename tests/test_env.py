@@ -34,7 +34,6 @@ else:
 print("\nSettings:")
 print(f"  PORT: {os.getenv('PORT', '3000')}")
 print(f"  DATA_DIR: {os.getenv('DATA_DIR', 'data')}")
-print(f"  SANDBOX_TYPE: {os.getenv('SANDBOX_TYPE', 'local')}")
 print(f"  AGENT_TIMEOUT: {os.getenv('AGENT_TIMEOUT', '300')}")
 print(f"  LOG_LEVEL: {os.getenv('LOG_LEVEL', 'INFO')}")
 print(f"  AGENT_LOG_FILE: {os.getenv('AGENT_LOG_FILE', '(not set)')}")

@@ -20,17 +20,24 @@ def test_memory_creation():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.db"
-        cm = ContextManager(db_path)
+        workspace_dir = Path(tmpdir) / "workspace"
+        workspace_dir.mkdir()
+        (workspace_dir / "files").mkdir()
+        (workspace_dir / "conversations").mkdir()
+        memory_file = workspace_dir / "memory.md"
+        memory_file.write_text("# Memory\n\n")
+
+        cm = ContextManager(db_path, workspace_dir)
 
         # Create a new user context
         context = cm.get_user_context("alice")
 
         workspace = Path(context["workspace_path"])
-        memory_file = workspace / "memory.md"
+        assert workspace == workspace_dir.absolute(), "Workspace should point to shared workspace"
 
-        assert memory_file.exists(), "memory.md should be created"
-        assert "Memory for alice" in memory_file.read_text()
-        print("✓ memory.md created for new user")
+        assert memory_file.exists(), "memory.md should exist"
+        assert "# Memory" in memory_file.read_text()
+        print("✓ memory.md exists in shared workspace")
 
 
 def test_append_memory():
@@ -39,7 +46,10 @@ def test_append_memory():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.db"
-        cm = ContextManager(db_path)
+        workspace_dir = Path(tmpdir) / "workspace"
+        workspace_dir.mkdir()
+        (workspace_dir / "memory.md").write_text("# Memory\n\n")
+        cm = ContextManager(db_path, workspace_dir)
 
         # Create user
         cm.get_user_context("bob")
@@ -65,17 +75,24 @@ def test_workspace_structure():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.db"
-        cm = ContextManager(db_path)
+        workspace_dir = Path(tmpdir) / "workspace"
+        workspace_dir.mkdir()
+        (workspace_dir / "files").mkdir()
+        (workspace_dir / "conversations").mkdir()
+        (workspace_dir / "memory.md").write_text("# Memory\n\n")
+
+        cm = ContextManager(db_path, workspace_dir)
 
         context = cm.get_user_context("charlie")
         workspace = Path(context["workspace_path"])
 
-        # Check directories
+        # All users share the same workspace
+        assert workspace == workspace_dir.absolute(), "Should use shared workspace"
         assert (workspace / "files").exists(), "files/ directory should exist"
         assert (workspace / "conversations").exists(), "conversations/ directory should exist"
         assert (workspace / "memory.md").exists(), "memory.md should exist"
 
-        print("✓ Workspace structure correct:")
+        print("✓ Shared workspace structure correct:")
         print(f"  - {workspace / 'files'}")
         print(f"  - {workspace / 'conversations'}")
         print(f"  - {workspace / 'memory.md'}")
@@ -87,7 +104,13 @@ def test_history_archival():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.db"
-        cm = ContextManager(db_path)
+        workspace_dir = Path(tmpdir) / "workspace"
+        workspace_dir.mkdir()
+        (workspace_dir / "files").mkdir()
+        (workspace_dir / "conversations").mkdir()
+        (workspace_dir / "memory.md").write_text("# Memory\n\n")
+
+        cm = ContextManager(db_path, workspace_dir)
 
         user_id = "dave"
         cm.get_user_context(user_id)
@@ -138,7 +161,11 @@ def test_get_history():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.db"
-        cm = ContextManager(db_path)
+        workspace_dir = Path(tmpdir) / "workspace"
+        workspace_dir.mkdir()
+        (workspace_dir / "memory.md").write_text("# Memory\n\n")
+
+        cm = ContextManager(db_path, workspace_dir)
 
         user_id = "eve"
         cm.get_user_context(user_id)
@@ -169,7 +196,11 @@ def test_clear_memory():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.db"
-        cm = ContextManager(db_path)
+        workspace_dir = Path(tmpdir) / "workspace"
+        workspace_dir.mkdir()
+        (workspace_dir / "memory.md").write_text("# Memory\n\n")
+
+        cm = ContextManager(db_path, workspace_dir)
 
         user_id = "frank"
         cm.get_user_context(user_id)
@@ -186,7 +217,7 @@ def test_clear_memory():
 
         memory_after = cm.get_memory(user_id)
         assert "Important fact 1" not in memory_after
-        assert "Memory for frank" in memory_after
+        assert "# Memory" in memory_after
         print("✓ Memory cleared successfully")
 
 

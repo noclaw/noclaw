@@ -2,7 +2,7 @@
 
 ## Setup Options
 
-1. **Automated Setup** — Run `./setup.sh` for one-command setup
+1. **Interactive Setup** — Run `python3 setup.py` (handles everything including channels)
 2. **Manual Setup** — Follow the step-by-step instructions below
 
 ---
@@ -12,7 +12,7 @@
 1. **Claude.ai Subscription** — Pro or Max at https://claude.ai
 2. **Node.js** — Required for the Claude Code CLI (`npm` must be available)
 3. **Python 3.10+** — For running the assistant server
-4. **Docker** (optional) — Only needed for `SANDBOX_TYPE=docker`
+4. **Docker** (optional) — For production deployment
 
 ## Step 1: Get Your Claude Token
 
@@ -32,13 +32,15 @@ This opens your browser to authorize Claude Code and displays your OAuth token (
 
 ## Step 2: Install Dependencies
 
-### Option A: Automated (Recommended)
+### Option A: Interactive Setup (Recommended)
 
 ```bash
 git clone https://github.com/noclaw/noclaw.git
 cd noclaw
-./setup.sh
+python3 setup.py
 ```
+
+This handles agentpool, dependencies, `.env` configuration, and optional Telegram/Slack setup.
 
 ### Option B: Manual
 
@@ -81,14 +83,7 @@ CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-your-token-here
 python run_assistant.py
 ```
 
-The server starts on port 3000 with local sandbox (default). Startup validation checks authentication, dependencies, and disk space.
-
-### Sandbox Options
-
-```bash
-python run_assistant.py           # Local sandbox (default, fast)
-python run_assistant.py --docker  # Docker sandbox (container isolation)
-```
+The server starts on port 3000. Startup validation checks authentication, dependencies, and disk space.
 
 ## Step 4: Test It
 
@@ -115,7 +110,7 @@ TELEGRAM_USER_ID=your-numeric-telegram-id
 TELEGRAM_MODEL_HINT=sonnet
 ```
 
-Restart the server — Telegram auto-starts. Run `/add-telegram` in Claude Code for a guided setup wizard.
+Restart the server — Telegram auto-starts. Or re-run `python3 setup.py` for guided setup.
 
 ### Slack
 
@@ -131,7 +126,21 @@ SLACK_USER_ID=U12345678
 SLACK_MODEL_HINT=sonnet
 ```
 
-Restart the server — Slack auto-starts. Run `/add-slack` in Claude Code for a guided setup wizard.
+Restart the server — Slack auto-starts. Or re-run `python3 setup.py` for guided setup.
+
+## Step 6: Setup Integrations (Optional)
+
+The agent can directly access Gmail, Google Calendar, Slack, Google Sheets, Docs, and Drive via the `direct-integrations` skill.
+
+Google integrations and workspace script dependencies are configured during `python3 setup.py` (the Google step walks through OAuth and runs `uv sync` automatically). You can re-run setup.py later to add them.
+
+If you need to install workspace script dependencies manually:
+```bash
+cd workspace/.claude/scripts
+uv sync
+```
+
+See [docs/PLUGINS.md](docs/PLUGINS.md) for the full integration list and architecture.
 
 ## Troubleshooting
 
@@ -148,15 +157,11 @@ Restart the server — Slack auto-starts. Run `/add-slack` in Claude Code for a 
 - Check logs: `LOG_LEVEL=DEBUG python run_assistant.py`
 - Set `AGENT_LOG_FILE=data/agents.jsonl` for detailed agent logs
 
-### Docker sandbox issues
-- Docker must be installed and running
-- Test with: `docker run hello-world`
-- The default local sandbox (`--local`) works without Docker
-
 ## Next Steps
 
 - **Enable heartbeat** — periodic checks via `POST /heartbeat/{user}/enable`
-- **Customize CLAUDE.md** — per-user instructions in `data/workspaces/{user}/CLAUDE.md`
+- **Customize workspace** — agent instructions in `workspace/CLAUDE.md`, persistent facts in `workspace/memory.md`
+- **Setup integrations** — Gmail, Calendar, Asana, etc. in `workspace/.claude/scripts/`
 - **Add cron scheduling** — run `/add-cron` for exact-time scheduling
 - **Monitor** — visit `http://localhost:3000/dashboard`
 - **Secure** — set `NOCLAW_API_KEY` in `.env` for webhook authentication
@@ -164,7 +169,7 @@ Restart the server — Slack auto-starts. Run `/add-slack` in Claude Code for a 
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System architecture
-- [docs/PLUGINS.md](docs/PLUGINS.md) — Channel plugin system
+- [docs/PLUGINS.md](docs/PLUGINS.md) — Channels, skills, and integrations
 - [docs/SECURITY.md](docs/SECURITY.md) — Security model
 - [docs/HEARTBEAT.md](docs/HEARTBEAT.md) — Heartbeat scheduling
 - [docs/LOGGING.md](docs/LOGGING.md) — Logging configuration

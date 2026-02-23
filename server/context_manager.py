@@ -21,8 +21,9 @@ ARCHIVE_THRESHOLD = 50  # Archive history when it exceeds this
 class ContextManager:
     """Manages user contexts and message history"""
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, workspace_dir: Path = None):
         self.db_path = db_path
+        self.workspace_dir = workspace_dir or Path("workspace")
         self.init_database()
 
     def init_database(self):
@@ -123,7 +124,7 @@ class ContextManager:
                 }
             else:
                 # Create new context
-                workspace_path = str((Path("data/workspaces") / user_id).absolute())
+                workspace_path = str(self.workspace_dir.absolute())
                 claude_md = self._get_default_claude_md(user_id)
 
                 cursor.execute("""
@@ -131,19 +132,6 @@ class ContextManager:
                     VALUES (?, ?, ?, ?)
                 """, (user_id, workspace_path, claude_md, "{}"))
                 conn.commit()
-
-                # Create workspace directory structure
-                workspace = Path(workspace_path)
-                workspace.mkdir(parents=True, exist_ok=True)
-
-                # Create subdirectories
-                (workspace / "files").mkdir(exist_ok=True)
-                (workspace / "conversations").mkdir(exist_ok=True)
-
-                # Initialize memory.md if it doesn't exist
-                memory_file = workspace / "memory.md"
-                if not memory_file.exists():
-                    memory_file.write_text(f"# Memory for {user_id}\n\n")
 
                 logger.info(f"Created new context for user: {user_id}")
 
@@ -316,7 +304,7 @@ class ContextManager:
         if memory_file.exists():
             return memory_file.read_text()
         else:
-            return f"# Memory for {user_id}\n\n"
+            return "# Memory\n\n"
 
     def append_memory(self, user_id: str, fact: str):
         """Append a fact to user's memory"""
@@ -326,7 +314,7 @@ class ContextManager:
 
         # Ensure memory file exists
         if not memory_file.exists():
-            memory_file.write_text(f"# Memory for {user_id}\n\n")
+            memory_file.write_text("# Memory\n\n")
 
         # Append the fact with timestamp
         timestamp = datetime.utcnow().strftime("%Y-%m-%d")
@@ -365,7 +353,7 @@ class ContextManager:
         workspace = Path(context["workspace_path"])
         memory_file = workspace / "memory.md"
 
-        memory_file.write_text(f"# Memory for {user_id}\n\n")
+        memory_file.write_text("# Memory\n\n")
         logger.info(f"Cleared memory for {user_id}")
 
     def _archive_old_history(self, user_id: str, keep_recent: int = MAX_RECENT_HISTORY):
@@ -460,9 +448,9 @@ class ContextManager:
 
     def _get_default_claude_md(self, user_id: str) -> str:
         """Get default CLAUDE.md content for new user"""
-        return f"""# Personal Assistant Context for {user_id}
+        return f"""# Personal Assistant
 
-You are a personal AI assistant helping {user_id} with various tasks.
+You are a personal AI assistant.
 
 ## Guidelines
 - Be helpful and concise

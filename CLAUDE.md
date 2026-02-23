@@ -6,16 +6,16 @@ This file provides guidance to Claude Code when working with this repository.
 
 **NoClaw** is a minimal personal assistant powered by the Claude Agent SDK via [agentpool](https://github.com/noclaw/agentpool). Key features:
 - Parallel agent execution — run multiple agents on independent tasks simultaneously
-- Local or Docker sandboxing via agentpool
+- Shared workspace with agent-specific skills
 - Universal webhook API that works with any service
-- Per-user contexts and workspaces with SQLite persistence
+- SQLite persistence for contexts and conversation history
 - AI-native platform — modify code directly rather than using config files
 - Small codebase designed to be understood and modified
 
 ## Current Status: v0.3 - AgentPool Integration
 
 ### Core Features
-- ✅ **AgentPool Integration** - Parallel agents, local or Docker sandboxes
+- ✅ **AgentPool Integration** - Parallel agents via agentpool
 - ✅ **Enhanced Memory** - 10-turn history, memory.md for persistent facts, auto-archival
 - ✅ **Model Selection** - Choose Haiku/Sonnet/Opus per request, track usage
 - ✅ **Heartbeat Scheduling** - Simple periodic checks without cron syntax
@@ -23,11 +23,12 @@ This file provides guidance to Claude Code when working with this repository.
 - ✅ **Monitoring Dashboard** - Real-time dashboard with Server-Sent Events
 - ✅ **Startup Validation** - Comprehensive system checks on startup
 - ✅ **Channel Plugins** - Telegram and Slack auto-discovered from env vars
-- ✅ **Bundled Skills** - Setup wizards (`/add-telegram`, `/add-slack`) and cron scheduling (`/add-cron`)
+- ✅ **Interactive Setup** - Consolidated `setup.py` for dependencies, .env, and channel configuration
+- ✅ **Bundled Skills** - Cron scheduling (`/add-cron`)
 
 ### Known Requirements
 - Network access: Required for Claude API
-- Docker or Podman: Only required when using `SANDBOX_TYPE=docker`
+- Docker (optional): For production deployment
 
 ## Architecture
 
@@ -43,16 +44,26 @@ This file provides guidance to Claude Code when working with this repository.
 
 ### Data Structure
 ```
+.claude/                          # Developer skills (for modifying NoClaw code)
+├── skills/                       # /add-cron
+└── commands/                     # /prime
+
+workspace/                        # Shared agent workspace
+├── .claude/                      # Agent skills (for performing tasks)
+│   ├── skills/                   # direct-integrations, etc.
+│   └── scripts/                  # Python scripts (Gmail, Calendar, Asana, etc.)
+├── CLAUDE.md                     # Agent instructions (regenerated each run)
+├── memory.md                     # Persistent facts
+├── HEARTBEAT.md                  # Periodic check checklist (optional)
+├── files/                        # User files
+└── conversations/                # Archived conversations
+
 data/
-├── assistant.db          # SQLite database (contexts, message_history, heartbeat_log)
-└── workspaces/           # Per-user workspaces
-    └── {user_id}/
-        ├── CLAUDE.md     # User-specific instructions (rewritten each run)
-        ├── memory.md     # Persistent facts Claude learns about the user
-        ├── HEARTBEAT.md  # Periodic check checklist (optional)
-        ├── files/        # User files
-        └── conversations/ # Archived conversation history
+├── assistant.db                  # SQLite database (contexts, message_history, heartbeat_log)
+└── agents.jsonl                  # Agent performance logs (optional)
 ```
+
+**Two `.claude/` directories:** Root `.claude/skills/` contains developer skills for modifying NoClaw code (invoked via Claude Code). `workspace/.claude/skills/` contains agent skills used during task execution (discovered via `setting_sources=["project"]`). See [docs/PLUGINS.md](docs/PLUGINS.md).
 
 ### Scheduling Model
 
@@ -77,10 +88,9 @@ data/
 
 ### Agent Execution
 - Claude SDK runs on the host via agentpool's `run_session()`
-- Sandbox type controlled by `SANDBOX_TYPE` env var: `local` (default) or `docker`
-- Local sandbox: direct host execution, no isolation — fast for development
-- Docker sandbox: persistent containers with workspace mounted at `/workspace`
+- Agent works in `workspace/` directory with its own `.claude/skills/`
 - Parallel execution: webhook accepts `tasks` array for independent concurrent agents
+- Production isolation: run NoClaw in a Docker container
 - **[Dockerfile.server](Dockerfile.server)** - FastAPI server container (optional deployment)
 - **[docker-compose.yml](docker-compose.yml)** - Server deployment configuration (optional)
 
@@ -88,7 +98,7 @@ data/
 
 ### When Modifying Code
 1. **Keep it simple** - This is a minimal example, not a framework
-2. **Security first** - Workspace validation via SecurityPolicy, optional Docker sandboxing
+2. **Security first** - Workspace validation via SecurityPolicy, container deployment for production
 3. **No config files** - Code is configuration, modify directly
 4. **Test with real Claude** - Use actual SDK responses, no mocks
 
@@ -101,28 +111,27 @@ Communication channels live in `server/channels/` and are auto-discovered on sta
 
 ### Adding Features
 For new channels: create a module in `server/channels/` extending `Channel` base class.
-For other features: create Claude Code skills in `.claude/skills/{skill-name}/`.
+For developer skills (modify NoClaw): create in `.claude/skills/{skill-name}/`.
+For agent skills (agent capabilities): create in `workspace/.claude/skills/{skill-name}/`.
 
 ### Available Channels
-- **Telegram** - Set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_USER_ID` (run `/add-telegram` for setup wizard)
-- **Slack** - Set `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` (run `/add-slack` for setup wizard)
+- **Telegram** - Set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_USER_ID` (run `python3 setup.py` for guided setup)
+- **Slack** - Set `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` (run `python3 setup.py` for guided setup)
 
-### Available Skills
-1. **Channel Setup Wizards**:
-   - `/add-telegram` - Walk through Telegram bot setup
-   - `/add-slack` - Walk through Slack app setup
-
-2. **Scheduling**:
+### Available Developer Skills (root `.claude/skills/`)
+1. **Scheduling**:
    - `/add-cron` - Traditional cron scheduling (exact times)
+
+### Available Agent Skills (`workspace/.claude/skills/`)
+1. **Direct Integrations** — Gmail, Google Calendar, Asana, Slack, Google Sheets, Docs, Drive
+   - Scripts in `workspace/.claude/scripts/` with `uv` dependency management
+   - Setup: `python3 setup.py` (Google OAuth and `uv sync` handled automatically)
 
 ## Testing
 
 ```bash
-# Start the server (local sandbox, default)
+# Start the server
 python run_assistant.py
-
-# Start with Docker sandbox
-python run_assistant.py --docker
 
 # Test single-agent webhook
 curl -X POST http://localhost:3000/webhook \

@@ -40,7 +40,6 @@ class StartupValidator:
         checks = [
             ("Python Version", self.check_python_version),
             ("AgentPool", self.check_agentpool),
-            ("Docker/Podman", self.check_container_runtime),
             ("Claude SDK Auth", self.check_claude_auth),
             ("Database Access", self.check_database),
             ("Disk Space", self.check_disk_space),
@@ -88,33 +87,6 @@ class StartupValidator:
             return True, f"Python {version.major}.{version.minor}.{version.micro}"
         else:
             return False, f"Python {version.major}.{version.minor} (requires 3.9+)"
-
-    def check_container_runtime(self) -> Tuple[bool, str]:
-        """Check Docker or Podman is available (optional — only needed for SANDBOX_TYPE=docker)"""
-        sandbox_type = os.getenv("SANDBOX_TYPE", "local")
-
-        for runtime in ["docker", "podman"]:
-            try:
-                result = subprocess.run(
-                    [runtime, "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if result.returncode == 0:
-                    version = result.stdout.strip().split()[2] if len(result.stdout.split()) > 2 else "unknown"
-                    return True, f"{runtime} v{version}"
-            except FileNotFoundError:
-                continue
-            except Exception as e:
-                logger.debug(f"Error checking {runtime}: {e}")
-                continue
-
-        if sandbox_type == "docker":
-            return False, "SANDBOX_TYPE=docker but Docker/Podman not found"
-        else:
-            self.warnings.append("Docker/Podman not found (not required for SANDBOX_TYPE=local)")
-            return True, "Not found (optional — using local sandbox)"
 
     def check_claude_auth(self) -> Tuple[bool, str]:
         """Check Claude authentication is configured"""

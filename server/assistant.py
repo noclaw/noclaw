@@ -17,11 +17,15 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from agentpool import AgentPool, Task, SessionResult, SessionStatus, AgentPoolConfig, SandboxType
+from agentpool import AgentPool, Task, SessionResult, SessionStatus, AgentPoolConfig
 from .context_manager import ContextManager
-from .simple_scheduler import SimpleScheduler  # Minimal core scheduler
+from .cron_scheduler import CronScheduler
 from .heartbeat import HeartbeatScheduler
 from .dashboard import Dashboard, stream_events
+
+# Project root (parent of server/) and shared workspace
+PROJECT_ROOT = Path(__file__).parent.parent
+WORKSPACE_DIR = PROJECT_ROOT / "workspace"
 
 # Configure logging
 log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -54,7 +58,6 @@ class WebhookRequest(BaseModel):
     # Parallel execution
     tasks: Optional[List[str]] = None  # Multiple prompts to run in parallel
     max_agents: Optional[int] = None  # Max concurrent agents (default: 4)
-    sandbox: Optional[str] = None  # "local" or "docker"
 
 
 class ScheduleRequest(BaseModel):
@@ -72,14 +75,23 @@ class PersonalAssistant:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(exist_ok=True)
 
+        # Shared workspace
+        WORKSPACE_DIR.mkdir(exist_ok=True)
+        (WORKSPACE_DIR / "files").mkdir(exist_ok=True)
+        (WORKSPACE_DIR / "conversations").mkdir(exist_ok=True)
+        (WORKSPACE_DIR / ".claude").mkdir(exist_ok=True)
+        (WORKSPACE_DIR / ".claude" / "skills").mkdir(exist_ok=True)
+        memory_file = WORKSPACE_DIR / "memory.md"
+        if not memory_file.exists():
+            memory_file.write_text("# Memory\n\n")
+
         # Core components
         self.db_path = self.data_dir / "assistant.db"
-        self.context_manager = ContextManager(self.db_path)
-        self.sandbox_type = SandboxType(os.getenv("SANDBOX_TYPE", "local"))
+        self.context_manager = ContextManager(self.db_path, WORKSPACE_DIR)
         self.agent_timeout = int(os.getenv("AGENT_TIMEOUT", "300"))
         _log_file = os.getenv("AGENT_LOG_FILE")
         self.agent_log_file = Path(_log_file) if _log_file else None
-        self.scheduler = SimpleScheduler(self)  # Minimal scheduler, use /add-cron for full cron
+        self.scheduler = CronScheduler(self)
         self.heartbeat = HeartbeatScheduler(self, default_interval=1800)  # 30 min default
         self.dashboard = Dashboard(self)  # Monitoring dashboard
         self.channels = []  # Auto-discovered channel plugins
@@ -206,8 +218,7 @@ class PersonalAssistant:
         history = self.context_manager.get_history(user, limit=5)
 
         # Resolve workspace
-        workspace = Path(context.get("workspace_path", str((self.data_dir / "workspaces" / user).absolute())))
-        workspace.mkdir(parents=True, exist_ok=True)
+        workspace = Path(workspace_path) if workspace_path else WORKSPACE_DIR
 
         # Write CLAUDE.md to workspace (SDK reads it as project context)
         claude_md = context.get("claude_md", "")
@@ -224,7 +235,6 @@ class PersonalAssistant:
                 max_agents=1,
                 workspace=workspace,
                 config=AgentPoolConfig(
-                    default_sandbox=self.sandbox_type,
                     default_model=model,
                     timeout=self.agent_timeout,
                     log_file=self.agent_log_file,
@@ -282,32 +292,22 @@ class PersonalAssistant:
     async def process_parallel(self, user: str, tasks: List[str],
                                workspace_path: Optional[str] = None,
                                model_hint: Optional[str] = None,
-                               max_agents: int = 4,
-                               sandbox: Optional[str] = None) -> Dict:
+                               max_agents: int = 4) -> Dict:
         """Process multiple tasks in parallel for a user."""
         context = self.context_manager.get_user_context(user)
 
-        if workspace_path:
-            from .security import SecurityPolicy
-            if not SecurityPolicy().validate_workspace(Path(workspace_path)):
-                raise ValueError(f"Workspace path rejected by security policy: {workspace_path}")
-            context["workspace_path"] = workspace_path
-
-        workspace = Path(context.get("workspace_path", str((self.data_dir / "workspaces" / user).absolute())))
-        workspace.mkdir(parents=True, exist_ok=True)
+        workspace = Path(workspace_path) if workspace_path else WORKSPACE_DIR
 
         claude_md = context.get("claude_md", "")
         (workspace / "CLAUDE.md").write_text(claude_md)
 
         system_prompt = self._build_system_prompt(claude_md, workspace)
         model = self._resolve_model(model_hint)
-        sandbox_type = SandboxType(sandbox) if sandbox else self.sandbox_type
 
         async with AgentPool(
             max_agents=max_agents,
             workspace=workspace,
             config=AgentPoolConfig(
-                default_sandbox=sandbox_type,
                 default_model=model,
                 timeout=self.agent_timeout,
                 log_file=self.agent_log_file,
@@ -430,26 +430,6 @@ async def health():
         health_status["checks"]["database"] = f"error: {str(e)}"
         health_status["status"] = "degraded"
 
-    # Check Docker daemon (only required for docker sandbox)
-    sandbox_type = os.getenv("SANDBOX_TYPE", "local")
-    health_status["checks"]["sandbox"] = sandbox_type
-    if sandbox_type == "docker":
-        try:
-            result = subprocess.run(
-                ["docker", "version", "--format", "{{.Server.Version}}"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode == 0:
-                health_status["checks"]["docker"] = f"ok (v{result.stdout.strip()})"
-            else:
-                health_status["checks"]["docker"] = "error: docker not responding"
-                health_status["status"] = "degraded"
-        except Exception as e:
-            health_status["checks"]["docker"] = f"error: {str(e)}"
-            health_status["status"] = "degraded"
-
     # Check Claude authentication
     token_configured = bool(os.getenv("CLAUDE_CODE_OAUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY"))
     health_status["checks"]["auth"] = "ok" if token_configured else "missing"
@@ -494,7 +474,6 @@ async def webhook(request: WebhookRequest, background_tasks: BackgroundTasks):
                 workspace_path=request.workspace_path,
                 model_hint=request.model_hint,
                 max_agents=request.max_agents or 4,
-                sandbox=request.sandbox,
             )
             return {
                 "status": "success",
@@ -540,18 +519,8 @@ async def schedule_task(request: ScheduleRequest):
     """
     Schedule a recurring task (requires /add-cron skill)
 
-    By default, NoClaw uses heartbeat scheduling for simplicity.
-    Install the /add-cron skill for full cron support.
+    Full cron support enabled with CronScheduler.
     """
-    # Check if CronScheduler is available
-    from .simple_scheduler import SimpleScheduler
-
-    if isinstance(assistant.scheduler, SimpleScheduler):
-        raise HTTPException(
-            status_code=501,
-            detail="Cron scheduling not installed. Use /add-cron skill to enable, or use heartbeat scheduling instead."
-        )
-
     try:
         task_id = assistant.scheduler.add_cron_task(
             user=request.user,
@@ -574,34 +543,17 @@ async def schedule_task(request: ScheduleRequest):
 @app.get("/tasks/{user}", dependencies=[Depends(verify_api_key)])
 async def list_tasks(user: str):
     """
-    List scheduled tasks for a user (requires /add-cron skill)
+    List scheduled tasks for a user.
 
-    By default, NoClaw uses heartbeat scheduling.
-    Use GET /heartbeat/{user}/status for heartbeat info.
+    For heartbeat info, use GET /heartbeat/{user}/status.
     """
-    from .simple_scheduler import SimpleScheduler
-
-    if isinstance(assistant.scheduler, SimpleScheduler):
-        raise HTTPException(
-            status_code=501,
-            detail="Cron scheduling not installed. Use /add-cron skill to enable, or check /heartbeat/{user}/status for heartbeat info."
-        )
-
     tasks = assistant.scheduler.list_user_tasks(user)
     return {"user": user, "tasks": tasks}
 
 
 @app.delete("/tasks/{task_id}", dependencies=[Depends(verify_api_key)])
 async def delete_task(task_id: str):
-    """Delete a scheduled task (requires /add-cron skill)"""
-    from .simple_scheduler import SimpleScheduler
-
-    if isinstance(assistant.scheduler, SimpleScheduler):
-        raise HTTPException(
-            status_code=501,
-            detail="Cron scheduling not installed. Use /add-cron skill to enable."
-        )
-
+    """Delete a scheduled task"""
     if assistant.scheduler.remove_task(task_id):
         return {"status": "deleted", "task_id": task_id}
     else:

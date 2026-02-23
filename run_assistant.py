@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """
 Run script for Personal Assistant
-Can run with or without Docker
 """
 
 import sys
 import os
-import subprocess
 import argparse
 import logging
 import signal
@@ -56,50 +54,15 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 
-def check_docker():
-    """Check if Docker/Podman is available"""
-    for runtime in ["docker", "podman"]:
-        try:
-            result = subprocess.run(
-                [runtime, "--version"],
-                capture_output=True,
-                timeout=5
-            )
-            if result.returncode == 0:
-                return runtime
-        except:
-            continue
-    return None
-
-
 def run_server(port: int = 3000):
-    """Run the assistant server. Sandbox type is controlled by SANDBOX_TYPE env var."""
-    sandbox = os.getenv("SANDBOX_TYPE", "local")
-    logger.info(f"Starting server with sandbox={sandbox}")
-
-    if sandbox == "docker":
-        runtime = check_docker()
-        if not runtime:
-            logger.error("SANDBOX_TYPE=docker but no container runtime found. Install Docker or Podman.")
-            sys.exit(1)
-        logger.info(f"Docker sandbox enabled (runtime: {runtime})")
-
+    """Run the assistant server."""
+    logger.info(f"Starting server on port {port}")
     import uvicorn
     uvicorn.run("server.assistant:app", host="0.0.0.0", port=port, reload=False)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Run Personal Assistant")
-    parser.add_argument(
-        "--local",
-        action="store_true",
-        help="Use local sandbox (no Docker). Same as SANDBOX_TYPE=local"
-    )
-    parser.add_argument(
-        "--docker",
-        action="store_true",
-        help="Use Docker sandbox. Same as SANDBOX_TYPE=docker"
-    )
     parser.add_argument(
         "--port",
         type=int,
@@ -126,13 +89,6 @@ def main():
             logger.error("Startup validation failed. Fix errors above or use --skip-validation")
             sys.exit(1)
         print()  # Blank line after validation
-
-    # Resolve sandbox type: CLI flags > env var > default (local)
-    if args.docker:
-        os.environ["SANDBOX_TYPE"] = "docker"
-    elif args.local or os.getenv("LOCAL_MODE", "").lower() == "true":
-        os.environ["SANDBOX_TYPE"] = "local"
-    # else: SANDBOX_TYPE env var or default "local" in assistant.py
 
     # Set environment
     os.environ["DATA_DIR"] = args.data_dir

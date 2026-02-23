@@ -23,8 +23,8 @@ RUN pip install --no-cache-dir -r server/requirements.txt
 COPY server/ /app/server/
 COPY run_assistant.py /app/
 
-# Create data directory
-RUN mkdir -p /app/data && chown -R noclaw:noclaw /app
+# Create data and workspace directories
+RUN mkdir -p /app/data /app/workspace && chown -R noclaw:noclaw /app
 
 USER noclaw
 

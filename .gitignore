@@ -6,6 +6,7 @@ settings.local.json
 .env.local
 .env.production
 .env.development
+.env.save
 
 # Keep .env.example for template
 !.env.example
@@ -54,9 +55,17 @@ logs/*.jsonl
 
 # NoClaw specific
 data/
-workspaces/
+workspace/*
+!workspace/.claude/
+workspace/.claude/scripts/.venv/
+workspace/.claude/scripts/.env
+google_credentials.json
+google_token.json
+workspace/.claude/scripts/__pycache__/
+workspace/.claude/scripts/integrations/__pycache__/
 *.db
 *.sqlite
 server.log
+templates/
 
 

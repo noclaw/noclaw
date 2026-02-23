@@ -14,7 +14,8 @@ Docker Host
     ├── FastAPI server
     ├── agentpool (Claude SDK)
     ├── Channel plugins (Telegram, Slack)
-    └── data/ (mounted volume)
+    ├── data/ (mounted volume)
+    └── workspace/ (mounted volume)
 ```
 
 ## Deployment Options
@@ -84,8 +85,8 @@ RUN pip install --no-cache-dir -r server/requirements.txt
 COPY server/ /app/server/
 COPY run_assistant.py /app/
 
-# Create data directory
-RUN mkdir -p /app/data && chown -R noclaw:noclaw /app
+# Create data and workspace directories
+RUN mkdir -p /app/data /app/workspace && chown -R noclaw:noclaw /app
 
 USER noclaw
 
@@ -106,7 +107,7 @@ The [docker-compose.yml](../docker-compose.yml) provides:
 - Port mapping (default 3000)
 - Environment from `.env` file
 
-**Key:** No Docker socket mount is needed. The container uses `LocalSandbox` — shell commands run directly inside the container, which is already isolated.
+**Key:** No Docker socket mount is needed. Shell commands run directly inside the container, which is already isolated.
 
 ```yaml
 version: '3.8'
@@ -118,10 +119,9 @@ services:
       dockerfile: Dockerfile.server
     volumes:
       - ./data:/app/data
+      - ./workspace:/app/workspace
     env_file:
       - .env
-    environment:
-      - SANDBOX_TYPE=local
     ports:
       - "${PORT:-3000}:3000"
     restart: unless-stopped
@@ -151,8 +151,8 @@ DATA_DIR=data                # Data directory
 LOG_LEVEL=INFO               # DEBUG, INFO, WARNING, ERROR
 AGENT_LOG_FILE=data/agents.jsonl  # Agent performance logs
 AGENT_TIMEOUT=300            # Agent timeout in seconds
+TIMEZONE=America/Denver      # Timezone for Gmail/Calendar integrations
 NOCLAW_API_KEY=secret        # Webhook authentication
-SANDBOX_TYPE=local           # local or docker
 
 # Channel plugins
 TELEGRAM_BOT_TOKEN=...
@@ -164,8 +164,8 @@ SLACK_APP_TOKEN=...
 ## Production Checklist
 
 1. **Set `NOCLAW_API_KEY`** — protect webhook endpoints
-2. **Set `SANDBOX_TYPE=local`** — the container itself provides isolation
-3. **Mount data volume** — `./data:/app/data` for database and workspace persistence
+2. **Mount data volume** — `./data:/app/data` for database persistence
+3. **Mount workspace volume** — `./workspace:/app/workspace` for agent workspace
 4. **Configure log rotation** — via Docker logging driver
 5. **Set up reverse proxy** — nginx or Caddy with TLS for external access
 6. **Restrict channel users** — `TELEGRAM_USER_ID`, `SLACK_USER_ID`
@@ -208,8 +208,8 @@ server {
 # Database
 sqlite3 data/assistant.db ".backup data/assistant.db.backup"
 
-# Workspaces
-tar -czf workspaces-backup.tar.gz data/workspaces/
+# Workspace
+tar -czf workspace-backup.tar.gz workspace/
 ```
 
 ## Updates

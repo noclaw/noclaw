@@ -47,15 +47,19 @@ class SecurityPolicy:
         "__pycache__",    # Python cache
     ]
 
-    def __init__(self, data_dir: Optional[str] = None):
+    def __init__(self, data_dir: Optional[str] = None, workspace_dir: Optional[Path] = None):
         """
         Initialize security policy.
 
         Args:
             data_dir: Root data directory (default: from DATA_DIR env or "data")
+            workspace_dir: Workspace directory (default: workspace/ at project root)
         """
         self.data_dir = Path(data_dir or os.getenv("DATA_DIR", "data")).absolute()
-        self.workspace_root = self.data_dir / "workspaces"
+        if workspace_dir:
+            self.workspace_root = workspace_dir.resolve()
+        else:
+            self.workspace_root = Path(__file__).parent.parent.joinpath("workspace").resolve()
 
         logger.info(f"Security policy initialized: workspace_root={self.workspace_root}")
 

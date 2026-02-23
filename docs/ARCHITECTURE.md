@@ -12,13 +12,13 @@ A minimal personal AI assistant powered by the Claude Agent SDK via [agentpool](
 
 ```
 HTTP Webhook → FastAPI → Assistant → AgentPool → Claude SDK → Response
-                  ↓           ↓           ↓
-             [SQLite]   [Channels]   [Local or Docker
-              persist    Telegram     sandbox]
+                  ↓           ↓
+             [SQLite]   [Channels]
+              persist    Telegram
                          Slack
 ```
 
-Single Python process. Claude SDK runs on the host via agentpool. Optional Docker sandboxing for shell command isolation.
+Single Python process. Claude SDK runs on the host via agentpool. Production isolation achieved by running NoClaw in a Docker container.
 
 ---
 
@@ -94,7 +94,6 @@ async with AgentPool(
     max_agents=1,
     workspace=workspace,
     config=AgentPoolConfig(
-        default_sandbox=self.sandbox_type,
         default_model=model,
         timeout=self.agent_timeout,
         log_file=self.agent_log_file,
@@ -109,18 +108,26 @@ async with AgentPool(
 ## Data Structure
 
 ```
+.claude/                           # Developer skills (for modifying NoClaw code)
+├── skills/                        # /add-cron
+└── commands/                      # /prime
+
+workspace/                         # Shared agent workspace
+├── .claude/                       # Agent skills (for performing tasks)
+│   ├── skills/                    # direct-integrations, etc.
+│   └── scripts/                   # Python scripts with uv (Gmail, Calendar, etc.)
+├── CLAUDE.md                      # Agent instructions (regenerated each run)
+├── memory.md                      # Persistent facts
+├── HEARTBEAT.md                   # Heartbeat checklist (optional)
+├── files/                         # User files
+└── conversations/                 # Archived conversations
+
 data/
-├── assistant.db           # SQLite database
-├── agents.jsonl           # Agent performance log (optional)
-└── workspaces/
-    └── {user_id}/
-        ├── CLAUDE.md      # User instructions (regenerated each run)
-        ├── memory.md      # Persistent facts
-        ├── HEARTBEAT.md   # Heartbeat checklist (optional)
-        ├── files/         # User files
-        ├── conversations/ # Archived conversations
-        └── config.json    # Optional workspace config
+├── assistant.db                   # SQLite database
+└── agents.jsonl                   # Agent performance log (optional)
 ```
+
+Root `.claude/skills/` are developer skills for modifying the NoClaw codebase (invoked via Claude Code). `workspace/.claude/skills/` are agent skills used during task execution. See [PLUGINS.md](PLUGINS.md) for details.
 
 ### Database Schema
 
@@ -186,23 +193,23 @@ Cron: exact timing via `/add-cron` skill for users who need it.
 
 See [HEARTBEAT.md](HEARTBEAT.md).
 
-### 4. Channel Plugins vs Skills
+### 4. Channels, Developer Skills, and Agent Skills
 
-**Plugins for pre-built integrations, skills for customization.**
+**Three extension mechanisms, each with a clear purpose.**
 
-- Plugins: drop a file in `server/channels/`, set env vars, restart
-- Skills: Claude Code reads SKILL.md and modifies code for bespoke requirements
+- **Channels** (`server/channels/`): communication interfaces — drop a file, set env vars, restart
+- **Developer skills** (`.claude/skills/`): modify NoClaw code — Claude Code reads SKILL.md and makes changes
+- **Agent skills** (`workspace/.claude/skills/`): agent capabilities — scripts the agent uses during task execution
 
 See [PLUGINS.md](PLUGINS.md).
 
 ### 5. Security Model
 
-**Workspace isolation by default, optional Docker sandboxing.**
+**Workspace isolation + container deployment.**
 
 - SecurityPolicy validates workspace paths before use
-- Each user gets an isolated workspace under `data/workspaces/`
-- `SANDBOX_TYPE=docker` adds container isolation for shell commands
-- No container isolation required — the default `local` sandbox runs on the host
+- Single shared workspace at `workspace/`
+- Production isolation by running NoClaw in a Docker container
 
 See [SECURITY.md](SECURITY.md).
 
@@ -220,7 +227,7 @@ HTML page at `/dashboard` with Server-Sent Events for live updates:
 
 ### Health Check
 
-`GET /health` returns system status: database, auth, sandbox, scheduler, disk space.
+`GET /health` returns system status: database, auth, scheduler, disk space.
 
 ### Agent Logs
 
@@ -235,7 +242,7 @@ cat data/agents.jsonl | jq 'select(.duration > 30)'
 ## Design Principles
 
 1. **KISS** — minimal core, delegate to agentpool
-2. **Security First** — workspace isolation, optional Docker sandboxing
+2. **Security First** — workspace isolation, container deployment for production
 3. **Useful Immediately** — channel plugins work with env vars
 4. **Code is Config** — no separate configuration files
 5. **Plugins Over Features** — extend via plugins and skills, not core bloat

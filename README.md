@@ -1,21 +1,16 @@
 # NoClaw
 
-A minimal personal assistant powered by the Claude Agent SDK. Supports parallel agents, local or Docker sandboxing, and per-user workspaces. Small enough to understand. Built to be customized for your exact needs.
+A minimal personal assistant powered by the Claude Agent SDK. Supports parallel agents and a shared workspace. Small enough to understand. Built to be customized for your exact needs.
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/noclaw/noclaw.git
 cd noclaw
-
-# Option 1: Automated setup
-./setup.sh
-
-# Option 2: Step-by-step guide
-# See QUICKSTART.md for detailed instructions
+python3 setup.py
 ```
 
-Then follow [QUICKSTART.md](QUICKSTART.md) to get your Claude OAuth token and start the assistant.
+The interactive setup handles dependencies, agentpool, `.env` configuration, and optional Telegram/Slack channel setup. See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 
 ## Philosophy
 
@@ -29,33 +24,32 @@ Then follow [QUICKSTART.md](QUICKSTART.md) to get your Claude OAuth token and st
 
 - **HTTP Webhooks** - Universal API that works with any service
 - **Parallel Agents** - Run multiple agents on independent tasks simultaneously
-- **Local or Docker Sandbox** - Fast local execution, or Docker isolation for security
-- **Per-User Context** - Each user gets workspace, CLAUDE.md, and memory.md
+- **Shared Workspace** - Agent workspace with its own skills, memory, and files
 - **Model Selection** - Choose Haiku/Sonnet/Opus per request, track usage
 - **Heartbeat Scheduling** - Simple periodic checks without cron syntax
 - **Enhanced Memory** - 10-turn history with auto-archival after 50 messages
 - **Monitoring Dashboard** - Real-time dashboard with Server-Sent Events
 - **Channel Plugins** - Telegram and Slack auto-start when env vars are set
-- **Bundled Skills** - Setup wizards and cron scheduling via `/add-telegram`, `/add-slack`, `/add-cron`
+- **Interactive Setup** - Single `setup.py` for dependencies, .env, and channel configuration
+- **Bundled Skills** - Cron scheduling via `/add-cron`
 - **Real Claude SDK** - Full Claude Code capabilities via [agentpool](https://github.com/noclaw/agentpool)
 
 ## Architecture
 
 ```
 HTTP Request → FastAPI → SQLite → AgentPool → Claude SDK → Response
-                 ↓          ↓         ↓            ↓
-            [Simple]   [Persistent] [Local    [Parallel
-                                   or Docker]  agents]
+                 ↓          ↓                      ↓
+            [Simple]   [Persistent]            [Parallel
+                                                agents]
 ```
 
-Single Python process. Claude SDK runs on the host via agentpool. Optional Docker sandboxing for shell command isolation.
+Single Python process. Claude SDK runs on the host via agentpool. Production isolation via Docker container.
 
 ## Usage
 
 Start the server:
 ```bash
-python run_assistant.py           # local sandbox (default)
-python run_assistant.py --docker  # Docker sandbox
+python run_assistant.py
 ```
 
 Send a message:
@@ -98,21 +92,21 @@ The codebase is small enough that Claude can safely modify it.
 │   ├── logger.py             # Structured logging
 │   └── dashboard.py          # Monitoring dashboard
 ├── tests/                    # Test suite
-├── .claude/skills/           # Bundled skills
-│   ├── add-telegram/         # Telegram setup wizard
-│   ├── add-slack/            # Slack setup wizard
+├── .claude/skills/           # Developer skills (modify NoClaw code)
 │   └── add-cron/             # Advanced cron scheduling
 ├── docs/                     # Documentation
 │   ├── ARCHITECTURE.md       # Architecture guide
 │   └── PLUGINS.md            # Plugin architecture
+├── workspace/                # Shared agent workspace
+│   ├── .claude/              # Agent skills (for performing tasks)
+│   │   ├── skills/           # direct-integrations, etc.
+│   │   └── scripts/          # Python scripts (Gmail, Calendar, etc.)
+│   ├── CLAUDE.md             # Agent instructions (regenerated each run)
+│   ├── memory.md             # Persistent facts
+│   └── files/                # User files
 └── data/                     # Runtime data
     ├── assistant.db          # SQLite database
-    ├── agents.jsonl          # Agent performance log (optional)
-    └── workspaces/           # User workspaces
-        └── {user_id}/
-            ├── CLAUDE.md     # User instructions
-            ├── memory.md     # Persistent facts
-            └── files/        # User files
+    └── agents.jsonl          # Agent performance log (optional)
 ```
 
 ## Channels
@@ -124,7 +118,7 @@ Channels are communication plugins that auto-start when their env vars are set. 
 | Telegram | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_USER_ID` | `pip install python-telegram-bot` |
 | Slack | `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` | `pip install slack-bolt` |
 
-Run `/add-telegram` or `/add-slack` for a guided setup wizard.
+Run `python3 setup.py` for guided channel setup, or set env vars manually.
 
 See [docs/PLUGINS.md](docs/PLUGINS.md) for how to add your own channels.
 
@@ -147,14 +141,13 @@ For other features, create `.claude/skills/add-{feature}/SKILL.md` that teaches 
 
 - Python 3.10+
 - [agentpool](https://github.com/noclaw/agentpool) (`pip install -e /path/to/agentpool`)
-- Docker (optional, for `SANDBOX_TYPE=docker`)
+- Docker (optional, for production deployment)
 
 ## Security
 
 - Workspace paths validated by SecurityPolicy before use
-- Optional Docker sandboxing for shell command isolation
+- Production isolation by running NoClaw in a Docker container
 - Resource limits (memory, CPU, timeouts) via agentpool config
-- Per-user workspace isolation
 
 ## FAQ
 
@@ -162,7 +155,7 @@ For other features, create `.claude/skills/add-{feature}/SKILL.md` that teaches 
 Webhooks are the universal foundation. Telegram and Slack ship as channel plugins — just set env vars. Add more channels by dropping a file in `server/channels/`.
 
 **Do I need Docker?**
-No. The default `SANDBOX_TYPE=local` runs agents directly on the host. Use `--docker` for container isolation.
+No. Docker is only needed for production deployment. For development, run directly with `python run_assistant.py`.
 
 **How do I debug issues?**
 Ask Claude Code. Check `data/agents.jsonl` for agent-level logs if `AGENT_LOG_FILE` is set.
@@ -174,3 +167,5 @@ MIT
 ## Acknowledgement
 
 Inspired by [NanoClaw](https://github.com/gavrielc/nanoclaw)
+
+Agent skills for querying Gmail, Google Calendar, Google Drive, Docs, and Sheets are based on [claude-code-second-brain](https://github.com/dynamous-community/workshops/tree/main/claude-code-second-brain) — a private repo by Cole Medin for [Dynamous](https://dynamous.ai/) members.

@@ -56,86 +56,21 @@ curl http://localhost:3000/health
 The [Dockerfile.server](../Dockerfile.server) builds a container with:
 - Python 3.11
 - NoClaw server code
-- agentpool dependency
+- agentpool installed from GitHub
 - Claude Code CLI (via Node.js)
 - Non-root user
-
-```dockerfile
-FROM python:3.11-slim
-
-# Install Node.js (required for Claude Code CLI)
-RUN apt-get update && apt-get install -y curl && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install Claude Code CLI
-RUN npm install -g @anthropic-ai/claude-code
-
-# Create non-root user
-RUN useradd -m -s /bin/bash noclaw
-
-WORKDIR /app
-
-# Install Python dependencies
-COPY server/requirements.txt /app/server/
-RUN pip install --no-cache-dir -r server/requirements.txt
-
-# Copy application code
-COPY server/ /app/server/
-COPY run_assistant.py /app/
-
-# Create data and workspace directories
-RUN mkdir -p /app/data /app/workspace && chown -R noclaw:noclaw /app
-
-USER noclaw
-
-EXPOSE 3000
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
-
-CMD ["python", "run_assistant.py"]
-```
 
 ### docker-compose.yml
 
 The [docker-compose.yml](../docker-compose.yml) provides:
-- Data persistence via volume mount
+- Data and workspace persistence via volume mounts
+- Google credential files mounted read-only (if present)
 - Health checks with auto-restart
 - Log rotation (10MB, 3 files)
 - Port mapping (default 3000)
 - Environment from `.env` file
 
 **Key:** No Docker socket mount is needed. Shell commands run directly inside the container, which is already isolated.
-
-```yaml
-version: '3.8'
-
-services:
-  noclaw:
-    build:
-      context: .
-      dockerfile: Dockerfile.server
-    volumes:
-      - ./data:/app/data
-      - ./workspace:/app/workspace
-    env_file:
-      - .env
-    ports:
-      - "${PORT:-3000}:3000"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-```
 
 ## Environment Variables
 
@@ -161,14 +96,36 @@ SLACK_BOT_TOKEN=...
 SLACK_APP_TOKEN=...
 ```
 
+## Google Credentials (Optional)
+
+Google integrations (Gmail, Calendar, Drive, etc.) require OAuth credentials. The `docker-compose.yml` mounts `google_credentials.json` and `google_token.json` from the project root into the container.
+
+### Local Docker
+
+Run `python3 setup.py` on your host machine before starting Docker. The setup wizard handles the Google OAuth browser flow and creates both files in the project root. Docker picks them up automatically via the volume mounts.
+
+### Cloud / Remote Server
+
+1. Run `python3 setup.py` on a machine with a browser to create `google_credentials.json` and `google_token.json`
+2. Copy both files to the project root on your server:
+   ```bash
+   scp google_credentials.json google_token.json yourserver:~/noclaw/
+   ```
+3. Start Docker — the credentials are mounted read-only into the container
+
+Alternatively, run `python3 setup.py` directly on the server and choose the headless OAuth option when prompted. This gives you a URL to open in any browser; after authorizing, you paste the redirect URL back into the terminal.
+
+**Note:** If you haven't set up Google OAuth, the credential files won't exist. Docker will create empty directories in their place, which is harmless — Google integrations simply won't be available.
+
 ## Production Checklist
 
 1. **Set `NOCLAW_API_KEY`** — protect webhook endpoints
 2. **Mount data volume** — `./data:/app/data` for database persistence
 3. **Mount workspace volume** — `./workspace:/app/workspace` for agent workspace
-4. **Configure log rotation** — via Docker logging driver
-5. **Set up reverse proxy** — nginx or Caddy with TLS for external access
-6. **Restrict channel users** — `TELEGRAM_USER_ID`, `SLACK_USER_ID`
+4. **Set up Google credentials** — if using Gmail, Calendar, or Drive integrations (see above)
+5. **Configure log rotation** — via Docker logging driver
+6. **Set up reverse proxy** — nginx or Caddy with TLS for external access
+7. **Restrict channel users** — `TELEGRAM_USER_ID`, `SLACK_USER_ID`
 
 ## Reverse Proxy (nginx with TLS)
 

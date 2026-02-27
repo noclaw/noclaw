@@ -66,6 +66,15 @@ curl -X POST http://localhost:3000/webhook \
   -d '{"user": "alice", "tasks": ["Review auth module", "Write API tests"], "max_agents": 2}'
 ```
 
+## Docker
+
+```bash
+docker compose up -d
+docker compose logs -f
+```
+
+Requires a configured `.env` file (run `python3 setup.py` first). Google credentials, if set up, are mounted automatically. See [docs/DEPLOY.md](docs/DEPLOY.md) for production deployment details.
+
 ## Customizing
 
 There are no configuration files. Just tell Claude Code what you want:

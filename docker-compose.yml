@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   noclaw:
     build:
@@ -8,6 +6,8 @@ services:
     volumes:
       - ./data:/app/data
       - ./workspace:/app/workspace
+      - ./google_credentials.json:/app/google_credentials.json:ro
+      - ./google_token.json:/app/google_token.json:ro
     env_file:
       - .env
     ports:

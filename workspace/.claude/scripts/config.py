@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 # === Paths ===
 SCRIPTS_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPTS_DIR.parent.parent        # workspace/
-NOCLAW_ROOT = PROJECT_ROOT.parent               # noclaw project root
+NOCLAW_ROOT = PROJECT_ROOT  # Use workspace as root to avoid read-only /app
 CLAUDE_DIR = PROJECT_ROOT / ".claude"
 
 # Load environment variables from root .env first, then script-specific overrides

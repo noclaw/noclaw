@@ -22,14 +22,7 @@ echo ""
 echo "Testing webhook..."
 curl -X POST http://localhost:3000/webhook \
   -H "Content-Type: application/json" \
-  -d '{"user": "alice", "message": "Hello from Docker! What time is it?"}' \
-  | python -m json.tool
-
-echo ""
-echo "Testing with scheduling request..."
-curl -X POST http://localhost:3000/webhook \
-  -H "Content-Type: application/json" \
-  -d '{"user": "alice", "message": "Please remind me every day at 9am to check my emails"}' \
+  -d '{"user": "test", "message": "Hello! What time is it?"}' \
   | python -m json.tool
 
 echo ""

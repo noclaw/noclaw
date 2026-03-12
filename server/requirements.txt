@@ -7,9 +7,6 @@ pydantic>=2.5.0
 python-multipart>=0.0.6
 python-dotenv>=1.0.0
 
-# Agent orchestration
-# agentpool is installed separately by setup.py (pip install -e ../agentpool)
-
 # Scheduler dependencies
 croniter>=2.0.1
 

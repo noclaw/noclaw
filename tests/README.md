@@ -16,7 +16,7 @@ python3 tests/test_security.py
 
 Or via pytest:
 ```bash
-python -m pytest tests/test_security.py tests/test_memory.py tests/test_heartbeat.py -v
+pytest tests/ -v --ignore=tests/test_claude.py
 ```
 
 ## Test Files
@@ -26,51 +26,38 @@ python -m pytest tests/test_security.py tests/test_memory.py tests/test_heartbea
 #### [test_security.py](test_security.py) - Workspace Security
 Tests the SecurityPolicy class for workspace validation.
 
-- Valid workspaces (under `data/workspaces/`) are accepted
-- Invalid workspaces (outside allowed root) are rejected
-- Blocked patterns (.ssh, .aws, .env) are rejected
-- Additional mount validation
+- Valid workspaces accepted
+- Invalid workspaces (outside allowed root) rejected
+- Blocked patterns (.ssh, .aws, .env) rejected
 - Clear error messages
-
-```bash
-python3 tests/test_security.py
-```
-
----
 
 #### [test_memory.py](test_memory.py) - Enhanced Memory System
 Tests memory features: memory.md, conversation history, archival.
 
-- memory.md created for new users
+- memory.md created for new channels
 - Appending and deduplicating facts
 - 10-turn conversation history
 - Auto-archival after 50 messages
 
-```bash
-python3 tests/test_memory.py
-```
-
----
-
-#### [test_heartbeat.py](test_heartbeat.py) - Heartbeat Scheduler
+#### [test_heartbeat.py](test_heartbeat.py) - Heartbeat Task Runner
 Tests heartbeat scheduling.
 
-- Enable/disable heartbeat per user
-- Interval configuration
-- HEARTBEAT.md creation
-- Database logging
-- HEARTBEAT_OK suppression
+- Task file parsing (YAML frontmatter, schedule expressions)
+- Due-time calculation
+- Task loading from workspace/.claude/tasks/
 
-```bash
-python3 tests/test_heartbeat.py
-```
+### Agent Tests
 
----
+#### [test_agent_security.py](test_agent_security.py) - Agent Security
+Tests agent execution security boundaries.
+
+#### [test_agent_session.py](test_agent_session.py) - Agent Sessions
+Tests agent session lifecycle — creation, tracking, and cleanup.
 
 ### Integration Tests
 
 #### [test_claude.py](test_claude.py) - Smoke Test
-Quick smoke test to verify real Claude SDK responses.
+Quick smoke test to verify real Claude responses via the server.
 
 **Requirements:** Server must be running with valid credentials.
 
@@ -79,29 +66,28 @@ python run_assistant.py &
 python3 tests/test_claude.py
 ```
 
----
+#### [test_webhook.sh](test_webhook.sh) - Webhook Test
 
-#### [test_docker.sh](test_docker.sh) - Docker Sandbox Test
-Tests webhook with Docker sandbox execution.
-
-**Requirements:** Docker installed, server running with `--docker`.
+**Requirements:** Server running.
 
 ```bash
-python run_assistant.py --docker &
-bash tests/test_docker.sh
+python run_assistant.py &
+bash tests/test_webhook.sh
 ```
 
----
+### Environment
+
+#### [test_env.py](test_env.py) - Environment Configuration
+Checks .env file loading and required variables.
 
 ## CI/CD Integration
 
 ```bash
 # Install dependencies
 pip install -r server/requirements.txt
-pip install -e /path/to/agentpool[sdk]
 
 # Run unit tests (no server needed)
-python -m pytest tests/test_security.py tests/test_memory.py tests/test_heartbeat.py -v
+pytest tests/ -v --ignore=tests/test_claude.py
 
 # Integration tests (requires server)
 python run_assistant.py &

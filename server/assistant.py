@@ -17,9 +17,8 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from agentpool import AgentPool, Task, SessionResult, SessionStatus, AgentPoolConfig
+from .agent import run_task, Task, SessionResult, SessionStatus, AgentConfig
 from .context_manager import ContextManager
-from .simple_scheduler import SimpleScheduler  # Minimal core scheduler
 from .heartbeat import HeartbeatScheduler
 from .dashboard import Dashboard, stream_events
 
@@ -49,23 +48,26 @@ def verify_api_key(x_api_key: str = Header(None), authorization: str = Header(No
 
 class WebhookRequest(BaseModel):
     """Universal webhook request format"""
-    user: str
     message: str = ""
+    user: Optional[str] = None  # Optional user identifier (used to build channel name)
+    channel: Optional[str] = None  # Channel name (default: "api" or "api_{user}")
     context: Optional[Dict[str, Any]] = {}
     callback_url: Optional[str] = None
-    workspace_path: Optional[str] = None
     model_hint: Optional[str] = None  # "haiku", "sonnet", "opus"
+    mode: Optional[str] = None  # "cli" (default) or "sdk"
+    resume: Optional[str] = None  # Resume a previous CLI session by session_id
     # Parallel execution
     tasks: Optional[List[str]] = None  # Multiple prompts to run in parallel
     max_agents: Optional[int] = None  # Max concurrent agents (default: 4)
 
 
-class ScheduleRequest(BaseModel):
-    """Schedule task request"""
-    user: str
-    cron: str  # Cron expression like "0 9 * * 1-5"
-    prompt: str
-    description: Optional[str] = None
+def _resolve_channel(request) -> str:
+    """Resolve channel name from request fields."""
+    if request.channel:
+        return request.channel
+    if request.user:
+        return f"api_{request.user}"
+    return "api"
 
 
 class PersonalAssistant:
@@ -91,17 +93,17 @@ class PersonalAssistant:
         self.agent_timeout = int(os.getenv("AGENT_TIMEOUT", "300"))
         _log_file = os.getenv("AGENT_LOG_FILE")
         self.agent_log_file = Path(_log_file) if _log_file else None
-        self.scheduler = SimpleScheduler(self)  # Minimal scheduler, use /add-cron for full cron
         self.heartbeat = HeartbeatScheduler(self, default_interval=1800)  # 30 min default
         self.dashboard = Dashboard(self)  # Monitoring dashboard
         self.channels = []  # Auto-discovered channel plugins
 
+        # CLAUDE.md content for the agent
+        self.claude_md = self.context_manager.get_default_claude_md()
+
         # Initialize database
         self.init_db()
 
-        # Start schedulers
-        self.scheduler.start()
-        # Note: HeartbeatScheduler.start() is async, started below
+        # Note: HeartbeatScheduler.start() is async, called in startup_event
         # Note: Channels are started in startup_event (async)
 
         logger.info(f"Personal Assistant initialized with data dir: {self.data_dir}")
@@ -124,27 +126,25 @@ class PersonalAssistant:
             return self.MODEL_MAP[model_hint.lower()]
         return os.getenv("DEFAULT_MODEL", "claude-sonnet-4-5")
 
-    def _build_system_prompt(self, claude_md: str, workspace: Path) -> str:
+    def _build_system_prompt(self) -> str:
         """Build system prompt from CLAUDE.md content and memory.md."""
         parts = []
-        if claude_md:
-            parts.append(claude_md)
+        if self.claude_md:
+            parts.append(self.claude_md)
 
-        memory_path = workspace / "memory.md"
-        if memory_path.exists():
-            memory_content = memory_path.read_text().strip()
-            if memory_content:
-                parts.append(f"\n## Remembered Facts\n{memory_content}")
+        memory_content = self.context_manager.get_memory().strip()
+        if memory_content:
+            parts.append(f"\n## Remembered Facts\n{memory_content}")
 
         return "\n".join(parts)
 
     @staticmethod
-    def _build_prompt(message: str, user: str, history: list, extra_context: dict) -> str:
-        """Build enhanced prompt with user info, history, and context."""
+    def _build_prompt(message: str, channel: str, history: list, extra_context: dict) -> str:
+        """Build enhanced prompt with channel info, history, and context."""
         parts = []
 
-        if user != "unknown":
-            parts.append(f"[User: {user}]")
+        if channel and channel != "api":
+            parts.append(f"[Channel: {channel}]")
 
         if history:
             parts.append("Recent conversation:")
@@ -161,21 +161,6 @@ class PersonalAssistant:
             parts.append(f"\nContext:\n{context_str}")
 
         return "\n".join(parts)
-
-    @staticmethod
-    def _extract_scheduled_tasks(response: str) -> list:
-        """Extract SCHEDULE: markers from response text."""
-        tasks = []
-        for line in response.split("\n"):
-            if line.strip().startswith("SCHEDULE:"):
-                parts = line.replace("SCHEDULE:", "").strip().split(" ", 1)
-                if len(parts) >= 2:
-                    tasks.append({
-                        "cron": parts[0],
-                        "prompt": parts[1],
-                        "description": parts[1][:50],
-                    })
-        return tasks
 
     @staticmethod
     def _extract_memory_commands(response_text: str):
@@ -197,53 +182,41 @@ class PersonalAssistant:
                 clean_lines.append(line)
         return "\n".join(clean_lines).strip(), remembers, forgets
 
-    async def process_message(self, user: str, message: str,
-                              workspace_path: Optional[str] = None,
+    async def process_message(self, channel: str, message: str,
                               extra_context: Dict = None,
-                              model_hint: Optional[str] = None) -> Dict:
-        """Process a message for a user"""
+                              model_hint: Optional[str] = None,
+                              mode: Optional[str] = None,
+                              resume_session_id: Optional[str] = None) -> Dict:
+        """Process a message from a channel"""
 
-        # Get or create user context
-        context = self.context_manager.get_user_context(user)
+        # Ensure channel is tracked
+        self.context_manager.ensure_channel(channel)
 
-        # Update workspace if provided (validate before persisting)
-        if workspace_path:
-            from .security import SecurityPolicy
-            if not SecurityPolicy().validate_workspace(Path(workspace_path)):
-                raise ValueError(f"Workspace path rejected by security policy: {workspace_path}")
-            self.context_manager.update_workspace(user, workspace_path)
-            context["workspace_path"] = workspace_path
+        # Get recent conversation history for this channel
+        history = self.context_manager.get_history(channel, limit=5)
 
-        # Get recent conversation history
-        history = self.context_manager.get_history(user, limit=5)
-
-        # Resolve workspace
-        workspace = Path(workspace_path) if workspace_path else WORKSPACE_DIR
+        workspace = WORKSPACE_DIR
 
         # Write CLAUDE.md to workspace (SDK reads it as project context)
-        claude_md = context.get("claude_md", "")
-        (workspace / "CLAUDE.md").write_text(claude_md)
+        (workspace / "CLAUDE.md").write_text(self.claude_md)
 
         # Build system prompt (CLAUDE.md + memory) and enhanced prompt (history + context)
-        system_prompt = self._build_system_prompt(claude_md, workspace)
-        prompt = self._build_prompt(message, user, history, extra_context or {})
+        system_prompt = self._build_system_prompt()
+        prompt = self._build_prompt(message, channel, history, extra_context or {})
         model = self._resolve_model(model_hint)
 
-        # Run via AgentPool
+        # Run agent
         try:
-            async with AgentPool(
-                max_agents=1,
+            execution_mode = mode or os.getenv("DEFAULT_AGENT_MODE", "cli")
+            session_result = await run_task(
+                Task(prompt=prompt, system_prompt=system_prompt or None, execution_mode=execution_mode, resume_session_id=resume_session_id),
                 workspace=workspace,
-                config=AgentPoolConfig(
+                config=AgentConfig(
                     default_model=model,
                     timeout=self.agent_timeout,
                     log_file=self.agent_log_file,
                 ),
-            ) as pool:
-                pool.submit(Task(prompt=prompt, system_prompt=system_prompt or None))
-                results = await pool.run()
-
-            session_result = results[0]
+            )
 
             if session_result.status in (SessionStatus.ERROR, SessionStatus.TIMEOUT):
                 raise RuntimeError(session_result.error or f"Agent {session_result.status.value}")
@@ -252,70 +225,71 @@ class PersonalAssistant:
             clean_response, remembers, forgets = self._extract_memory_commands(session_result.response)
 
             for search in forgets:
-                self.context_manager.remove_memory(user, search)
-                logger.info(f"Forgot memory for {user}: {search[:50]}...")
+                self.context_manager.remove_memory(search)
+                logger.info(f"Forgot memory matching: {search[:50]}...")
             for fact in remembers:
-                self.context_manager.append_memory(user, fact)
-                logger.info(f"Saved memory for {user}: {fact[:50]}...")
-
-            scheduled_tasks = self._extract_scheduled_tasks(session_result.response)
+                self.context_manager.append_memory(fact)
+                logger.info(f"Saved memory: {fact[:50]}...")
 
             result = {
                 "response": clean_response,
                 "model_used": session_result.model_used,
                 "tokens_used": session_result.tokens_used,
-                "scheduled_tasks": scheduled_tasks,
+                "session_id": session_result.session_id,
             }
 
             # Store in history
             self.context_manager.add_message(
-                user_id=user,
+                channel=channel,
                 message=message,
                 response=clean_response,
                 model_used=session_result.model_used,
                 tokens_used=session_result.tokens_used,
             )
 
-            # Handle scheduled tasks
-            if scheduled_tasks:
-                for sched_task in scheduled_tasks:
-                    sched_task["user"] = user
-                    self.scheduler.add_task(sched_task)
-                    logger.info(f"Scheduled task for {user}: {sched_task.get('description', 'unnamed')}")
-
             return result
 
         except Exception as e:
-            logger.error(f"Error processing message for {user}: {e}")
+            logger.error(f"Error processing message for {channel}: {e}")
             raise
 
-    async def process_parallel(self, user: str, tasks: List[str],
-                               workspace_path: Optional[str] = None,
+    async def process_parallel(self, channel: str, tasks: List[str],
                                model_hint: Optional[str] = None,
+                               mode: Optional[str] = None,
                                max_agents: int = 4) -> Dict:
-        """Process multiple tasks in parallel for a user."""
-        context = self.context_manager.get_user_context(user)
+        """Process multiple tasks in parallel."""
+        import asyncio
 
-        workspace = Path(workspace_path) if workspace_path else WORKSPACE_DIR
+        self.context_manager.ensure_channel(channel)
 
-        claude_md = context.get("claude_md", "")
-        (workspace / "CLAUDE.md").write_text(claude_md)
+        workspace = WORKSPACE_DIR
+        (workspace / "CLAUDE.md").write_text(self.claude_md)
 
-        system_prompt = self._build_system_prompt(claude_md, workspace)
+        system_prompt = self._build_system_prompt()
         model = self._resolve_model(model_hint)
 
-        async with AgentPool(
-            max_agents=max_agents,
-            workspace=workspace,
-            config=AgentPoolConfig(
-                default_model=model,
-                timeout=self.agent_timeout,
-                log_file=self.agent_log_file,
-            ),
-        ) as pool:
-            for prompt in tasks:
-                pool.submit(Task(prompt=prompt, system_prompt=system_prompt or None))
-            results = await pool.run()
+        config = AgentConfig(
+            default_model=model,
+            timeout=self.agent_timeout,
+            log_file=self.agent_log_file,
+        )
+
+        # Run tasks concurrently
+        execution_mode = mode or os.getenv("DEFAULT_AGENT_MODE", "cli")
+        coros = [
+            run_task(
+                Task(
+                    prompt=prompt,
+                    system_prompt=system_prompt or None,
+                    agent_id=f"agent-{i+1}",
+                    execution_mode=execution_mode,
+                ),
+                workspace=workspace,
+                config=config,
+            )
+            for i, prompt in enumerate(tasks)
+        ]
+        results = await asyncio.gather(*coros)
 
         return {
             "results": [
@@ -332,27 +306,6 @@ class PersonalAssistant:
             "completed": sum(1 for r in results if r.status == SessionStatus.COMPLETED),
             "failed": sum(1 for r in results if r.status != SessionStatus.COMPLETED),
         }
-
-    async def handle_scheduled_task(self, task: Dict):
-        """Handle execution of a scheduled task"""
-        user = task.get("user")
-        prompt = task.get("prompt")
-
-        logger.info(f"Executing scheduled task for {user}: {prompt[:50]}...")
-
-        try:
-            result = await self.process_message(user, prompt)
-
-            # If there's a callback URL, send the result
-            if callback := task.get("callback_url"):
-                # TODO: Implement callback notification
-                pass
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Failed to execute scheduled task: {e}")
-            return {"error": str(e)}
 
     async def start_channels(self):
         """Discover and start configured channel plugins."""
@@ -375,9 +328,7 @@ class PersonalAssistant:
             except Exception as e:
                 logger.error(f"Failed to stop channel {channel.name}: {e}")
 
-        # Stop schedulers
         await self.heartbeat.stop()
-        self.scheduler.stop()
         logger.info("Shutdown complete")
 
 
@@ -424,7 +375,7 @@ async def health():
 
     # Check database connection
     try:
-        assistant.context_manager.get_user_context("_health_check")
+        assistant.context_manager.ensure_channel("_health_check")
         health_status["checks"]["database"] = "ok"
     except Exception as e:
         health_status["checks"]["database"] = f"error: {str(e)}"
@@ -436,8 +387,7 @@ async def health():
     if not token_configured:
         health_status["status"] = "degraded"
 
-    # Check scheduler status
-    health_status["checks"]["scheduler"] = "running" if assistant.scheduler else "not initialized"
+    # Check heartbeat status
     health_status["checks"]["heartbeat"] = "running" if assistant.heartbeat.running else "stopped"
 
     # Check disk space
@@ -460,27 +410,32 @@ async def webhook(request: WebhookRequest, background_tasks: BackgroundTasks):
     Universal webhook endpoint - receive messages from any service.
 
     Single agent mode (default):
-        {"user": "jeff", "message": "Hello"}
+        {"message": "Hello"}
+        {"message": "Hello", "channel": "api_jeff"}
+        {"message": "Hello", "user": "jeff"}  (becomes channel "api_jeff")
 
     Parallel mode:
-        {"user": "jeff", "tasks": ["Review auth", "Write tests"], "max_agents": 2}
+        {"tasks": ["Review auth", "Write tests"], "max_agents": 2}
     """
+    channel = _resolve_channel(request)
+
     try:
         # Parallel mode: multiple independent tasks
         if request.tasks:
             result = await assistant.process_parallel(
-                user=request.user,
+                channel=channel,
                 tasks=request.tasks,
-                workspace_path=request.workspace_path,
                 model_hint=request.model_hint,
+                mode=request.mode,
                 max_agents=request.max_agents or 4,
             )
             return {
                 "status": "success",
                 "mode": "parallel",
+                "agent_mode": request.mode or os.getenv("DEFAULT_AGENT_MODE", "cli"),
                 "results": result["results"],
                 "metadata": {
-                    "user": request.user,
+                    "channel": channel,
                     "timestamp": datetime.utcnow().isoformat(),
                     "completed": result["completed"],
                     "failed": result["failed"],
@@ -489,11 +444,12 @@ async def webhook(request: WebhookRequest, background_tasks: BackgroundTasks):
 
         # Single agent mode (default)
         result = await assistant.process_message(
-            user=request.user,
+            channel=channel,
             message=request.message,
-            workspace_path=request.workspace_path,
             extra_context=request.context,
             model_hint=request.model_hint,
+            mode=request.mode,
+            resume_session_id=request.resume,
         )
 
         if request.callback_url:
@@ -502,10 +458,10 @@ async def webhook(request: WebhookRequest, background_tasks: BackgroundTasks):
         return {
             "status": "success",
             "response": result.get("response"),
+            "session_id": result.get("session_id"),
             "metadata": {
-                "user": request.user,
+                "channel": channel,
                 "timestamp": datetime.utcnow().isoformat(),
-                "scheduled_tasks": result.get("scheduled_tasks", []),
             },
         }
 
@@ -514,121 +470,128 @@ async def webhook(request: WebhookRequest, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/schedule", dependencies=[Depends(verify_api_key)])
-async def schedule_task(request: ScheduleRequest):
-    """
-    Schedule a recurring task (requires /add-cron skill)
-
-    Full cron support enabled with CronScheduler.
-    """
-    if isinstance(assistant.scheduler, SimpleScheduler):
-        raise HTTPException(status_code=501, detail="Cron scheduling not enabled. Run /add-cron skill to enable.")
-    try:
-        task_id = assistant.scheduler.add_cron_task(
-            user=request.user,
-            cron=request.cron,
-            prompt=request.prompt,
-            description=request.description
-        )
-
-        return {
-            "status": "scheduled",
-            "task_id": task_id,
-            "next_run": assistant.scheduler.get_next_run(request.cron)
-        }
-
-    except Exception as e:
-        logger.error(f"Scheduling error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+@app.get("/tasks", dependencies=[Depends(verify_api_key)])
+async def list_tasks():
+    """List all tasks from workspace/.claude/tasks/"""
+    return {"tasks": assistant.heartbeat.list_tasks()}
 
 
-@app.get("/tasks/{user}", dependencies=[Depends(verify_api_key)])
-async def list_tasks(user: str):
-    """
-    List scheduled tasks for a user.
+@app.post("/tasks/{task_name}/run", dependencies=[Depends(verify_api_key)])
+async def run_task_endpoint(task_name: str):
+    """Run a task on-demand by name."""
+    task = assistant.heartbeat.get_task(task_name)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task '{task_name}' not found")
 
-    For heartbeat info, use GET /heartbeat/{user}/status.
-    """
-    if isinstance(assistant.scheduler, SimpleScheduler):
-        raise HTTPException(status_code=501, detail="Cron scheduling not enabled. Run /add-cron skill to enable.")
-    tasks = assistant.scheduler.list_user_tasks(user)
-    return {"user": user, "tasks": tasks}
+    result = await assistant.heartbeat.run_task(task)
+    if result is None:
+        raise HTTPException(status_code=500, detail="Task execution failed")
 
-
-@app.delete("/tasks/{task_id}", dependencies=[Depends(verify_api_key)])
-async def delete_task(task_id: str):
-    """Delete a scheduled task"""
-    if isinstance(assistant.scheduler, SimpleScheduler):
-        raise HTTPException(status_code=501, detail="Cron scheduling not enabled. Run /add-cron skill to enable.")
-    if assistant.scheduler.remove_task(task_id):
-        return {"status": "deleted", "task_id": task_id}
-    else:
-        raise HTTPException(status_code=404, detail="Task not found")
+    return {
+        "status": "success",
+        "task": task_name,
+        "response": result.get("response"),
+    }
 
 
-@app.get("/history/{user}", dependencies=[Depends(verify_api_key)])
-async def get_history(user: str, limit: int = 10):
-    """Get message history for a user"""
-    history = assistant.context_manager.get_history(user, limit)
-    return {"user": user, "history": history}
+@app.get("/history/{channel}", dependencies=[Depends(verify_api_key)])
+async def get_history(channel: str, limit: int = 10):
+    """Get message history for a channel"""
+    history = assistant.context_manager.get_history(channel, limit)
+    return {"channel": channel, "history": history}
 
 
-@app.post("/context/{user}", dependencies=[Depends(verify_api_key)])
-async def update_context(user: str, claude_md: str = Body(...)):
-    """Update user's CLAUDE.md context"""
-    assistant.context_manager.update_claude_md(user, claude_md)
-    return {"status": "updated", "user": user}
-
-
-@app.post("/heartbeat/{user}/enable", dependencies=[Depends(verify_api_key)])
-async def enable_heartbeat(user: str, interval: Optional[int] = 1800):
-    """Enable heartbeat for a user"""
-    assistant.heartbeat.enable_for_user(user, interval)
+@app.post("/heartbeat/enable", dependencies=[Depends(verify_api_key)])
+async def enable_heartbeat(interval: Optional[int] = 1800):
+    """Enable heartbeat"""
+    assistant.heartbeat.enable(interval)
     return {
         "status": "enabled",
-        "user": user,
         "interval": interval,
         "description": f"Heartbeat will run every {interval} seconds"
     }
 
 
-@app.post("/heartbeat/{user}/disable", dependencies=[Depends(verify_api_key)])
-async def disable_heartbeat(user: str):
-    """Disable heartbeat for a user"""
-    assistant.heartbeat.disable_for_user(user)
-    return {"status": "disabled", "user": user}
+@app.post("/heartbeat/disable", dependencies=[Depends(verify_api_key)])
+async def disable_heartbeat():
+    """Disable heartbeat"""
+    assistant.heartbeat.disable()
+    return {"status": "disabled"}
 
 
-@app.get("/heartbeat/{user}/status", dependencies=[Depends(verify_api_key)])
-async def heartbeat_status(user: str):
-    """Get heartbeat status for a user"""
-    context = assistant.context_manager.get_user_context(user)
+@app.get("/heartbeat/status", dependencies=[Depends(verify_api_key)])
+async def heartbeat_status():
+    """Get heartbeat status and scheduled tasks"""
+    return {
+        "enabled": assistant.heartbeat.enabled,
+        "interval": assistant.heartbeat.interval,
+        "running": assistant.heartbeat.running,
+        "tasks": assistant.heartbeat.list_tasks(),
+    }
 
-    # Query heartbeat settings from database
-    with sqlite3.connect(assistant.db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT heartbeat_enabled, heartbeat_interval, last_heartbeat
-            FROM contexts
-            WHERE user_id = ?
-        """, (user,))
-        row = cursor.fetchone()
 
-    if row:
+@app.get("/sessions", dependencies=[Depends(verify_api_key)])
+async def list_sessions():
+    """List active agent sessions."""
+    from .agent import registry
+    sessions = registry.list_active()
+    return {
+        "sessions": [s.to_dict() for s in sessions],
+        "total": len(sessions),
+    }
+
+
+@app.get("/sessions/{session_name}/logs", dependencies=[Depends(verify_api_key)])
+async def get_session_logs(session_name: str, lines: int = 500):
+    """Get logs from an agent session.
+
+    For active sessions, returns session info.
+    For completed sessions, reads the saved .jsonl conversation log.
+    """
+    from .agent import registry
+
+    # Check active sessions
+    session = registry.get(session_name)
+    if session:
         return {
-            "user": user,
-            "enabled": bool(row["heartbeat_enabled"]),
-            "interval": row["heartbeat_interval"],
-            "last_heartbeat": row["last_heartbeat"]
+            "session": session_name,
+            "output": f"Session running since {session.elapsed_seconds:.0f}s ago\nModel: {session.model}\nPrompt: {session.prompt_preview}",
+            "status": "running",
         }
-    else:
+
+    # Check saved conversation logs
+    conversations_dir = Path(os.getenv("WORKSPACE_DIR", "workspace")) / "conversations"
+    logs = sorted(conversations_dir.glob(f"{session_name}*.jsonl"), reverse=True)
+    if logs:
+        output = logs[0].read_text()
+        # Extract just the result lines for readability
+        result_lines = []
+        for line in output.splitlines():
+            try:
+                event = __import__("json").loads(line)
+                if event.get("type") == "result":
+                    result_lines.append(f"Result: {event.get('result', '')[:500]}")
+                    result_lines.append(f"Cost: ${event.get('total_cost_usd', 0):.4f}")
+                    result_lines.append(f"Duration: {event.get('duration_ms', 0)}ms")
+            except Exception:
+                pass
         return {
-            "user": user,
-            "enabled": False,
-            "interval": None,
-            "last_heartbeat": None
+            "session": session_name,
+            "output": "\n".join(result_lines) if result_lines else output[:2000],
+            "log_file": str(logs[0]),
+            "status": "completed",
         }
+
+    raise HTTPException(status_code=404, detail=f"Session '{session_name}' not found")
+
+
+@app.post("/sessions/{session_name}/kill", dependencies=[Depends(verify_api_key)])
+async def kill_session(session_name: str):
+    """Kill a running agent session."""
+    from .agent import registry
+    if registry.kill(session_name):
+        return {"status": "killed", "session": session_name}
+    raise HTTPException(status_code=404, detail=f"Session '{session_name}' not found or already finished")
 
 
 @app.get("/dashboard")

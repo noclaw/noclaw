@@ -56,13 +56,17 @@ run_test "Enhanced Memory" \
     "python3 tests/test_memory.py" \
     "Memory.md and conversation archival"
 
-run_test "Heartbeat Scheduler" \
+run_test "Heartbeat Task Runner" \
     "python3 tests/test_heartbeat.py" \
-    "Heartbeat enablement and execution"
+    "Task parsing, scheduling, and loading"
 
-run_test "Scheduler Refactoring" \
-    "python3 tests/test_cron_skill.py" \
-    "SimpleScheduler vs CronScheduler"
+run_test "Agent Security" \
+    "python3 tests/test_agent_security.py" \
+    "Agent execution security boundaries"
+
+run_test "Agent Sessions" \
+    "python3 tests/test_agent_session.py" \
+    "Agent session lifecycle"
 
 # 2. Environment Check
 echo -e "\n${BLUE}=== Environment Check ===${NC}"
@@ -78,12 +82,12 @@ echo -e "\n${BLUE}=== Integration Tests ===${NC}"
 if curl -s http://localhost:3000/health > /dev/null 2>&1; then
     echo -e "${GREEN}Server detected at http://localhost:3000${NC}"
 
-    run_test "Claude SDK Smoke Test" \
+    run_test "Claude Smoke Test" \
         "python3 tests/test_claude.py" \
-        "Real Claude SDK responses"
+        "Real Claude responses via server"
 
     run_test "Webhook Smoke Test" \
-        "bash tests/test_docker.sh" \
+        "bash tests/test_webhook.sh" \
         "Webhook with real Claude responses"
 else
     echo -e "${YELLOW}⚠️  Server not running at http://localhost:3000${NC}"

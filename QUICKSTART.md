@@ -12,7 +12,6 @@
 1. **Claude.ai Subscription** — Pro or Max at https://claude.ai
 2. **Node.js** — Required for the Claude Code CLI (`npm` must be available)
 3. **Python 3.10+** — For running the assistant server
-4. **Docker** (optional) — For production deployment
 
 ## Step 1: Get Your Claude Token
 
@@ -40,7 +39,7 @@ cd noclaw
 python3 setup.py
 ```
 
-This handles agentpool, dependencies, `.env` configuration, and optional Telegram/Slack setup.
+This handles tool checks, dependencies, `.env` configuration, and optional Telegram/Slack setup.
 
 ### Option B: Manual
 
@@ -48,26 +47,14 @@ This handles agentpool, dependencies, `.env` configuration, and optional Telegra
 git clone https://github.com/noclaw/noclaw.git
 cd noclaw
 
+# Install required tools
+npm install -g @anthropic-ai/claude-code
+
 # Install Python dependencies
 pip install -r server/requirements.txt
 
 # Create .env file
 cp .env.example .env
-```
-
-### agentpool
-
-NoClaw depends on [agentpool](https://github.com/noclaw/agentpool) for Claude SDK orchestration. Install it:
-
-```bash
-# Clone and install agentpool
-git clone https://github.com/noclaw/agentpool.git ../agentpool
-pip install -e ../agentpool[sdk]
-```
-
-Or if you already have it elsewhere:
-```bash
-pip install -e /path/to/agentpool[sdk]
 ```
 
 ### Configure .env
@@ -87,20 +74,65 @@ The server starts on port 3000. Startup validation checks authentication, depend
 
 ## Step 4: Test It
 
+### Using the CLI client
+
+The `noclaw` CLI client is included in the repo. It talks to the server over HTTP and works from any machine.
+
+```bash
+# Send a message
+./noclaw send "What is 2+2?"
+
+# Continue the conversation
+./noclaw reply "Now multiply that by 10"
+
+# Choose a model
+./noclaw send -m opus "Research this topic in depth"
+
+# Check server health
+./noclaw health
+
+# See active sessions
+./noclaw status
+
+# View conversation history
+./noclaw history
+
+# Open the dashboard
+./noclaw dashboard
+```
+
+### Using curl
+
 ```bash
 curl -X POST http://localhost:3000/webhook \
   -H "Content-Type: application/json" \
-  -d '{"user": "test", "message": "What is 2+2?"}'
+  -d '{"message": "What is 2+2?"}'
 ```
-
-You should see a real Claude response.
 
 **Note:** If you set `NOCLAW_API_KEY` in `.env`, you must pass it in the request:
 ```bash
 curl -X POST http://localhost:3000/webhook \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key" \
-  -d '{"user": "test", "message": "What is 2+2?"}'
+  -d '{"message": "What is 2+2?"}'
+```
+
+### CLI Client Configuration
+
+The `noclaw` client reads config from `~/.noclaw` or environment variables:
+
+```bash
+# ~/.noclaw
+url=http://mac-mini.local:3000
+api_key=your-secret-key
+channel=api
+```
+
+Or via environment:
+```bash
+export NOCLAW_URL=http://mac-mini.local:3000
+export NOCLAW_API_KEY=your-secret-key
+export NOCLAW_CHANNEL=api
 ```
 
 ## Step 5: Add Channels (Optional)
@@ -150,6 +182,33 @@ uv sync
 
 See [docs/PLUGINS.md](docs/PLUGINS.md) for the full integration list and architecture.
 
+## Step 7: Mac App Control (Optional — macOS only)
+
+Install cliclick for mouse/keyboard automation:
+```bash
+brew install cliclick
+```
+
+This enables the `mac-control` skill — the agent can open apps, click buttons, type text, take screenshots, and AirDrop files. See `workspace/.claude/skills/mac-control/SKILL.md`.
+
+For a full Mac Mini deployment guide (permissions, auto-start, networking), see [docs/MAC-MINI-SETUP.md](docs/MAC-MINI-SETUP.md).
+
+## Deployment
+
+### macOS (Mac Mini)
+
+Run natively for full desktop control — screenshots, mouse/keyboard, AppleScript. See [docs/MAC-MINI-SETUP.md](docs/MAC-MINI-SETUP.md) for the complete setup guide including launchd auto-start, permissions, and networking.
+
+### Docker
+
+For headless server deployment without Mac-specific features:
+
+```bash
+docker compose up -d
+```
+
+See [Dockerfile.server](Dockerfile.server) and [docker-compose.yml](docker-compose.yml).
+
 ## Troubleshooting
 
 ### "CLAUDE_CODE_OAUTH_TOKEN not found"
@@ -167,12 +226,11 @@ See [docs/PLUGINS.md](docs/PLUGINS.md) for the full integration list and archite
 
 ## Next Steps
 
-- **Enable heartbeat** — periodic checks via `POST /heartbeat/{user}/enable`
 - **Customize workspace** — agent instructions in `workspace/CLAUDE.md`, persistent facts in `workspace/memory.md`
-- **Setup integrations** — Gmail, Calendar, Asana, etc. in `workspace/.claude/scripts/`
-- **Add cron scheduling** — run `/add-cron` for exact-time scheduling
+- **Setup integrations** — Gmail, Calendar, etc. via `python3 setup.py`
 - **Monitor** — visit `http://localhost:3000/dashboard`
 - **Secure** — set `NOCLAW_API_KEY` in `.env` for webhook authentication
+- **Enable heartbeat** — periodic task execution via `POST /heartbeat/enable`
 
 ## Documentation
 
@@ -181,4 +239,4 @@ See [docs/PLUGINS.md](docs/PLUGINS.md) for the full integration list and archite
 - [docs/SECURITY.md](docs/SECURITY.md) — Security model
 - [docs/HEARTBEAT.md](docs/HEARTBEAT.md) — Heartbeat scheduling
 - [docs/LOGGING.md](docs/LOGGING.md) — Logging configuration
-- [docs/DEPLOY.md](docs/DEPLOY.md) — Production deployment
+- [docs/MAC-MINI-SETUP.md](docs/MAC-MINI-SETUP.md) — Mac Mini deployment

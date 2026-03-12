@@ -3,8 +3,7 @@
 NoClaw Setup — Interactive setup script.
 
 Consolidates all setup steps into one place:
-  - Prerequisites check
-  - agentpool installation
+  - Prerequisites check (Python, claude CLI)
   - Python dependency installation
   - .env configuration (from .env.example template)
   - Telegram channel setup (optional)
@@ -35,10 +34,8 @@ ENV_FILE = NOCLAW_ROOT / ".env"
 ENV_EXAMPLE = NOCLAW_ROOT / ".env.example"
 REQUIREMENTS = NOCLAW_ROOT / "server" / "requirements.txt"
 MIN_PYTHON = (3, 10)
-AGENTPOOL_REPO_URL = "https://github.com/noclaw/agentpool.git"
-AGENTPOOL_DEFAULT_PATH = NOCLAW_ROOT.parent / "agentpool"
-
-TOTAL_STEPS = 9
+TOTAL_STEPS = 10
+AVAILABLE_SKILLS = NOCLAW_ROOT / "available-skills"
 
 GOOGLE_CREDENTIALS_FILE = NOCLAW_ROOT / "google_credentials.json"
 GOOGLE_TOKEN_FILE = NOCLAW_ROOT / "google_token.json"
@@ -289,7 +286,7 @@ def step_check_prerequisites() -> None:
     if result.returncode == 0:
         print_ok("git available")
     else:
-        print_warn("git not found — needed to clone agentpool")
+        print_warn("git not found")
 
     # Node.js (optional, for claude setup-token)
     result = subprocess.run(["node", "--version"], capture_output=True, text=True)
@@ -306,54 +303,76 @@ def step_check_prerequisites() -> None:
         print_skip("uv not found (needed for workspace integration scripts)")
 
 
-def step_install_agentpool() -> Path:
-    """Step 2: Clone and install agentpool. Returns the install path."""
-    print_step(2, "Installing agentpool")
-    print_info("agentpool provides Claude SDK orchestration for NoClaw.")
-    print()
+def step_check_tools() -> None:
+    """Step 2: Check required tools (claude CLI)."""
+    print_step(2, "Checking required tools")
 
-    if is_package_installed("agentpool"):
-        print_ok("agentpool already installed")
-        # Return a dummy path since it's already installed
-        return AGENTPOOL_DEFAULT_PATH
-
-    # Ask where to clone
-    default_path = str(AGENTPOOL_DEFAULT_PATH)
-    path_str = prompt("Where should agentpool be cloned?", default=default_path)
-    agentpool_path = Path(path_str).resolve()
-
-    # Clone if not present
-    if not agentpool_path.exists():
-        print()
-        print_info(f"Cloning {AGENTPOOL_REPO_URL} -> {agentpool_path}")
-        result = subprocess.run(
-            ["git", "clone", AGENTPOOL_REPO_URL, str(agentpool_path)],
-            capture_output=False,
-        )
-        if result.returncode != 0:
-            print_warn("Failed to clone agentpool")
-            print_info("You can install it manually later:")
-            print_info(f"  git clone {AGENTPOOL_REPO_URL} {agentpool_path}")
-            print_info(f"  pip install -e {agentpool_path}")
-            return agentpool_path
+    # claude CLI
+    if shutil.which("claude"):
+        print_ok("claude CLI installed")
     else:
-        print_ok(f"agentpool directory exists at {agentpool_path}")
+        print_warn("claude CLI not found — required for agent execution")
+        print_info("Install with: npm install -g @anthropic-ai/claude-code")
 
-    # Install
-    print_info("Installing agentpool...")
-    result = run_pip("install", "-e", str(agentpool_path), quiet=False)
-    if result.returncode == 0:
-        print_ok("agentpool installed")
+
+def step_platform_skills() -> None:
+    """Step 3: Detect platform and install appropriate skills."""
+    print_step(3, "Platform & skills")
+
+    import platform
+    is_mac = platform.system() == "Darwin"
+    skills_dir = NOCLAW_ROOT / "workspace" / ".claude" / "skills"
+
+    if is_mac:
+        print_ok("Platform: macOS")
+
+        # Check for mac-specific tools
+        if shutil.which("cliclick"):
+            print_ok("cliclick installed (mouse/keyboard control)")
+        else:
+            print_skip("cliclick not installed (optional: brew install cliclick)")
+
+        if shutil.which("tmux"):
+            print_ok("tmux installed (background processes)")
+        else:
+            print_skip("tmux not installed (optional: brew install tmux)")
+
+        # Offer to install mac-control skill
+        mac_skill = skills_dir / "mac-control"
+        available_mac = AVAILABLE_SKILLS / "mac-control"
+        if mac_skill.exists():
+            print_ok("mac-control skill already installed")
+        elif available_mac.exists():
+            if prompt_yes_no("Install mac-control skill? (screenshots, mouse/keyboard, AppleScript)", default=True):
+                shutil.copytree(available_mac, mac_skill)
+                print_ok("mac-control skill installed")
+            else:
+                print_skip("Skipping mac-control skill")
+        else:
+            print_skip("mac-control skill not available in available-skills/")
     else:
-        print_warn("Failed to install agentpool")
-        print_info(f"Try manually: pip install -e {agentpool_path}")
+        print_ok(f"Platform: {platform.system()}")
+        print_info("Running in Docker or Linux — mac-specific skills not applicable")
 
-    return agentpool_path
+    # List installed skills
+    if skills_dir.exists():
+        installed = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+        if installed:
+            print()
+            print_info(f"Installed skills: {', '.join(sorted(installed))}")
+
+    # List available skills not yet installed
+    if AVAILABLE_SKILLS.exists():
+        available = [d.name for d in AVAILABLE_SKILLS.iterdir() if d.is_dir()]
+        not_installed = [s for s in available if not (skills_dir / s).exists()]
+        if not_installed:
+            print_info(f"Available to install: {', '.join(sorted(not_installed))}")
+            print_info(f"Copy from available-skills/ to workspace/.claude/skills/ to enable")
 
 
 def step_install_deps() -> None:
-    """Step 3: Install Python dependencies."""
-    print_step(3, "Installing Python dependencies")
+    """Step 4: Install Python dependencies."""
+    print_step(4, "Installing Python dependencies")
 
     if not REQUIREMENTS.exists():
         print_warn(f"Requirements file not found: {REQUIREMENTS}")
@@ -369,8 +388,8 @@ def step_install_deps() -> None:
 
 
 def step_configure_env() -> OrderedDict:
-    """Step 4: Configure .env from .env.example. Returns the env values dict."""
-    print_step(4, "Configuring environment")
+    """Step 5: Configure .env from .env.example. Returns the env values dict."""
+    print_step(5, "Configuring environment")
 
     # Load existing values if .env exists
     existing = OrderedDict()
@@ -442,8 +461,8 @@ def step_configure_env() -> OrderedDict:
 
 
 def step_setup_telegram(env: OrderedDict) -> None:
-    """Step 5: Telegram channel setup (optional)."""
-    print_step(5, "Telegram channel (optional)")
+    """Step 6: Telegram channel setup (optional)."""
+    print_step(6, "Telegram channel (optional)")
 
     # Check if already configured
     current_token = env.get("TELEGRAM_BOT_TOKEN", "")
@@ -501,8 +520,8 @@ def step_setup_telegram(env: OrderedDict) -> None:
 
 
 def step_setup_slack(env: OrderedDict) -> None:
-    """Step 6: Slack channel setup (optional)."""
-    print_step(6, "Slack channel (optional)")
+    """Step 7: Slack channel setup (optional)."""
+    print_step(7, "Slack channel (optional)")
 
     # Check if already configured
     current_token = env.get("SLACK_BOT_TOKEN", "")
@@ -588,8 +607,8 @@ def step_setup_slack(env: OrderedDict) -> None:
 
 
 def step_setup_google(env: OrderedDict) -> None:
-    """Step 7: Google integrations setup (optional)."""
-    print_step(7, "Google integrations (optional)")
+    """Step 8: Google integrations setup (optional)."""
+    print_step(8, "Google integrations (optional)")
 
     # Check if already configured
     if GOOGLE_TOKEN_FILE.exists():
@@ -753,8 +772,8 @@ def _install_workspace_scripts() -> None:
 
 
 def step_write_env(env: OrderedDict) -> None:
-    """Step 8: Write .env file."""
-    print_step(8, "Writing .env")
+    """Step 9: Write .env file."""
+    print_step(9, "Writing .env")
 
     if ENV_EXAMPLE.exists():
         write_env_from_template(ENV_EXAMPLE, ENV_FILE, env)
@@ -774,18 +793,18 @@ def step_write_env(env: OrderedDict) -> None:
 
 
 def step_verify() -> None:
-    """Step 9: Verify installation."""
-    print_step(9, "Verification")
+    """Step 10: Verify installation."""
+    print_step(10, "Verification")
 
     # Python
     v = sys.version_info
     print_ok(f"Python {v.major}.{v.minor}")
 
-    # agentpool
-    if is_package_installed("agentpool"):
-        print_ok("agentpool installed")
+    # claude CLI
+    if shutil.which("claude"):
+        print_ok("claude CLI installed")
     else:
-        print_warn("agentpool not installed")
+        print_warn("claude CLI not installed")
 
     # FastAPI
     if is_package_installed("fastapi"):
@@ -868,7 +887,8 @@ def main() -> None:
     print_header("NoClaw Setup")
 
     step_check_prerequisites()
-    step_install_agentpool()
+    step_check_tools()
+    step_platform_skills()
     step_install_deps()
     env = step_configure_env()
     step_setup_telegram(env)

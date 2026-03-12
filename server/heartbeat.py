@@ -1,49 +1,195 @@
 #!/usr/bin/env python3
 """
-Heartbeat Scheduler - Simple periodic checks for the AI assistant
+Heartbeat Task Runner
 
-Unlike cron (exact times, isolated), heartbeat runs periodically in the main
-session and can check multiple things in one turn efficiently.
+Periodically scans workspace/.claude/tasks/ for scheduled task files and runs
+them when due. Each task is a markdown file with optional YAML frontmatter
+specifying its schedule.
+
+Schedule expressions (human-readable):
+  every heartbeat          — runs every tick (default 30 min)
+  every 2 hours            — runs every N hours
+  every morning            — once per day, first tick after 6am
+  every evening            — once per day, first tick after 5pm
+  every monday             — once per week on that day
+  every weekday            — monday through friday mornings
+
+Task files without a schedule (or with enabled: false) are available for
+on-demand execution via API but won't run automatically.
 """
 
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from typing import Dict, Optional
+import re
 import time
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# Days of the week for schedule parsing
+WEEKDAYS = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
+}
+
+
+def parse_frontmatter(content: str) -> tuple[dict, str]:
+    """Parse YAML-like frontmatter from a markdown file.
+
+    Returns (metadata_dict, body_text). If no frontmatter, returns ({}, full_content).
+    """
+    if not content.startswith("---"):
+        return {}, content
+
+    lines = content.split("\n")
+    end_idx = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end_idx = i
+            break
+
+    if end_idx is None:
+        return {}, content
+
+    metadata = {}
+    for line in lines[1:end_idx]:
+        line = line.strip()
+        if ":" in line:
+            key, _, value = line.partition(":")
+            value = value.strip()
+            # Parse booleans
+            if value.lower() in ("true", "yes"):
+                value = True
+            elif value.lower() in ("false", "no"):
+                value = False
+            metadata[key.strip()] = value
+
+    body = "\n".join(lines[end_idx + 1:]).strip()
+    return metadata, body
+
+
+def parse_schedule(schedule_str: str) -> Optional[dict]:
+    """Parse a human-readable schedule string into a schedule spec.
+
+    Returns a dict with type and parameters, or None if unparseable.
+    """
+    s = schedule_str.strip().lower()
+
+    if s == "every heartbeat":
+        return {"type": "heartbeat"}
+
+    # "every N hours"
+    m = re.match(r"every\s+(\d+)\s+hours?", s)
+    if m:
+        return {"type": "interval_hours", "hours": int(m.group(1))}
+
+    # "every morning" / "every evening"
+    if s == "every morning":
+        return {"type": "daily", "after_hour": 6}
+    if s == "every evening":
+        return {"type": "daily", "after_hour": 17}
+
+    # "every weekday"
+    if s == "every weekday":
+        return {"type": "weekday", "after_hour": 6}
+
+    # "every monday", "every tuesday", etc.
+    for day_name, day_num in WEEKDAYS.items():
+        if s == f"every {day_name}":
+            return {"type": "weekly", "day": day_num, "after_hour": 6}
+
+    logger.warning(f"Unknown schedule expression: {schedule_str}")
+    return None
+
+
+def is_task_due(schedule: dict, last_run: Optional[float], now: float, interval: int) -> bool:
+    """Determine if a task is due to run based on its schedule.
+
+    Args:
+        schedule: Parsed schedule spec from parse_schedule()
+        last_run: Unix timestamp of last run (None if never run)
+        now: Current unix timestamp
+        interval: Heartbeat interval in seconds
+    """
+    dt = datetime.fromtimestamp(now)
+    stype = schedule["type"]
+
+    if stype == "heartbeat":
+        # Run every heartbeat tick
+        return last_run is None or (now - last_run) >= interval
+
+    if stype == "interval_hours":
+        hours = schedule["hours"]
+        return last_run is None or (now - last_run) >= (hours * 3600)
+
+    if stype == "daily":
+        after_hour = schedule["after_hour"]
+        if dt.hour < after_hour:
+            return False
+        # Run once per day: check if last run was before today's target hour
+        if last_run is None:
+            return True
+        last_dt = datetime.fromtimestamp(last_run)
+        return last_dt.date() < dt.date() or last_dt.hour < after_hour
+
+    if stype == "weekday":
+        after_hour = schedule["after_hour"]
+        if dt.weekday() > 4 or dt.hour < after_hour:
+            return False
+        if last_run is None:
+            return True
+        last_dt = datetime.fromtimestamp(last_run)
+        return last_dt.date() < dt.date()
+
+    if stype == "weekly":
+        target_day = schedule["day"]
+        after_hour = schedule["after_hour"]
+        if dt.weekday() != target_day or dt.hour < after_hour:
+            return False
+        if last_run is None:
+            return True
+        return (now - last_run) >= (6 * 86400)  # At least 6 days since last run
+
+    return False
+
+
+class TaskDefinition:
+    """A task loaded from a markdown file."""
+
+    def __init__(self, path: Path, metadata: dict, prompt: str):
+        self.path = path
+        self.name = path.stem  # filename without .md
+        self.metadata = metadata
+        self.prompt = prompt
+        self.enabled = metadata.get("enabled", True)
+        self.schedule_str = metadata.get("schedule", "")
+        self.schedule = parse_schedule(self.schedule_str) if self.schedule_str else None
 
 
 class HeartbeatScheduler:
     """
-    Simple heartbeat scheduler that runs periodic checks.
-
-    Benefits over cron:
-    - Simpler (no cron syntax)
-    - More cost-effective (one turn checks multiple things)
-    - Context-aware (maintains conversation memory)
-    - Smart suppression (HEARTBEAT_OK if nothing important)
+    Task runner that periodically scans workspace/.claude/tasks/ and runs
+    scheduled tasks when they're due.
     """
 
     def __init__(self, assistant, default_interval: int = 1800):
-        """
-        Initialize heartbeat scheduler.
-
-        Args:
-            assistant: Reference to PersonalAssistant
-            default_interval: Default check interval in seconds (default: 1800 = 30min)
-        """
         self.assistant = assistant
-        self.default_interval = default_interval
+        self.interval = default_interval
+        self.enabled = False
         self.running = False
-        self.task = None
+        self.task = None  # asyncio task
+        self._last_runs: Dict[str, float] = {}  # task_name -> last_run_timestamp
 
         logger.info(f"Heartbeat scheduler initialized (interval: {default_interval}s)")
 
+    @property
+    def tasks_dir(self) -> Path:
+        return self.assistant.context_manager.workspace_dir / ".claude" / "tasks"
+
     async def start(self):
-        """Start the heartbeat scheduler"""
+        """Start the heartbeat loop"""
         if self.running:
             logger.warning("Heartbeat scheduler already running")
             return
@@ -53,7 +199,7 @@ class HeartbeatScheduler:
         logger.info("Heartbeat scheduler started")
 
     async def stop(self):
-        """Stop the heartbeat scheduler"""
+        """Stop the heartbeat loop"""
         self.running = False
         if self.task:
             self.task.cancel()
@@ -63,258 +209,116 @@ class HeartbeatScheduler:
                 pass
         logger.info("Heartbeat scheduler stopped")
 
+    def enable(self, interval: Optional[int] = None):
+        """Enable heartbeat"""
+        if interval:
+            self.interval = interval
+        self.enabled = True
+        logger.info(f"Heartbeat enabled (interval: {self.interval}s)")
+
+    def disable(self):
+        """Disable heartbeat"""
+        self.enabled = False
+        logger.info("Heartbeat disabled")
+
+    def load_tasks(self) -> List[TaskDefinition]:
+        """Load all task definitions from workspace/.claude/tasks/"""
+        tasks_dir = self.tasks_dir
+        if not tasks_dir.exists():
+            return []
+
+        tasks = []
+        for task_file in sorted(tasks_dir.glob("*.md")):
+            try:
+                content = task_file.read_text()
+                metadata, prompt = parse_frontmatter(content)
+                tasks.append(TaskDefinition(task_file, metadata, prompt))
+            except Exception as e:
+                logger.error(f"Error loading task {task_file.name}: {e}")
+
+        return tasks
+
+    def get_task(self, name: str) -> Optional[TaskDefinition]:
+        """Load a single task by name."""
+        task_file = self.tasks_dir / f"{name}.md"
+        if not task_file.exists():
+            return None
+        try:
+            content = task_file.read_text()
+            metadata, prompt = parse_frontmatter(content)
+            return TaskDefinition(task_file, metadata, prompt)
+        except Exception as e:
+            logger.error(f"Error loading task {name}: {e}")
+            return None
+
+    def list_tasks(self) -> List[dict]:
+        """List all tasks with their status."""
+        tasks = self.load_tasks()
+        now = time.time()
+        result = []
+        for t in tasks:
+            last_run = self._last_runs.get(t.name)
+            info = {
+                "name": t.name,
+                "schedule": t.schedule_str or "on-demand",
+                "enabled": t.enabled,
+                "last_run": datetime.fromtimestamp(last_run).isoformat() if last_run else None,
+            }
+            if t.schedule and t.enabled:
+                info["due"] = is_task_due(t.schedule, last_run, now, self.interval)
+            result.append(info)
+        return result
+
+    async def run_task(self, task: TaskDefinition) -> Optional[dict]:
+        """Run a single task via the assistant."""
+        logger.info(f"Running task: {task.name}")
+
+        try:
+            result = await self.assistant.process_message(
+                channel="heartbeat",
+                message=f"[TASK: {task.name}]\n\n{task.prompt}",
+                model_hint="haiku",
+            )
+
+            self._last_runs[task.name] = time.time()
+            response = result.get("response", "")
+            logger.info(f"Task {task.name} completed: {response[:100]}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Task {task.name} failed: {e}")
+            return None
+
     async def _run_loop(self):
-        """Main heartbeat loop"""
+        """Main heartbeat loop — check for due tasks every minute."""
         logger.info("Heartbeat loop started")
 
         while self.running:
             try:
-                # Get all users with heartbeat enabled
-                users_to_check = self._get_users_for_heartbeat()
+                if self.enabled:
+                    await self._check_and_run_tasks()
 
-                for user_id, interval in users_to_check:
-                    try:
-                        await self._run_heartbeat_for_user(user_id)
-                    except Exception as e:
-                        logger.error(f"Heartbeat failed for {user_id}: {e}")
-
-                # Sleep until next check (use shortest interval)
-                sleep_time = min(
-                    [interval for _, interval in users_to_check],
-                    default=self.default_interval
-                )
-                await asyncio.sleep(sleep_time)
+                await asyncio.sleep(60)  # Check every minute
 
             except asyncio.CancelledError:
                 logger.info("Heartbeat loop cancelled")
                 break
             except Exception as e:
                 logger.error(f"Heartbeat loop error: {e}")
-                await asyncio.sleep(60)  # Back off on error
+                await asyncio.sleep(60)
 
-    def _get_users_for_heartbeat(self) -> list:
-        """
-        Get users who have heartbeat enabled and are due for a check.
+    async def _check_and_run_tasks(self):
+        """Scan tasks directory and run any that are due."""
+        tasks = self.load_tasks()
+        now = time.time()
 
-        Returns:
-            List of (user_id, interval) tuples
-        """
-        import sqlite3
+        for task in tasks:
+            if not task.enabled or not task.schedule:
+                continue
 
-        users = []
-        try:
-            with sqlite3.connect(self.assistant.context_manager.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-
-                cursor.execute("""
-                    SELECT user_id, heartbeat_enabled, heartbeat_interval, last_heartbeat
-                    FROM contexts
-                    WHERE heartbeat_enabled = 1
-                """)
-
-                now = datetime.now(timezone.utc)
-
-                for row in cursor.fetchall():
-                    user_id = row["user_id"]
-                    interval = row["heartbeat_interval"] or self.default_interval
-                    last_heartbeat = row["last_heartbeat"]
-
-                    # Check if it's time for a heartbeat
-                    if last_heartbeat:
-                        last_check = datetime.fromisoformat(last_heartbeat.replace("Z", "+00:00"))
-                        next_check = last_check + timedelta(seconds=interval)
-
-                        if now >= next_check:
-                            users.append((user_id, interval))
-                    else:
-                        # First heartbeat
-                        users.append((user_id, interval))
-
-        except Exception as e:
-            logger.error(f"Error getting users for heartbeat: {e}")
-
-        return users
-
-    async def _run_heartbeat_for_user(self, user_id: str):
-        """
-        Run heartbeat check for a specific user.
-
-        Reads HEARTBEAT.md from user's workspace and executes check.
-        """
-        logger.info(f"Running heartbeat for user: {user_id}")
-
-        # Get user context
-        context = self.assistant.context_manager.get_user_context(user_id)
-        workspace = Path(context["workspace_path"])
-        heartbeat_file = workspace / "HEARTBEAT.md"
-
-        # Check if HEARTBEAT.md exists
-        if not heartbeat_file.exists():
-            logger.debug(f"No HEARTBEAT.md for {user_id}, creating default")
-            self._create_default_heartbeat(user_id, heartbeat_file)
-
-        # Read heartbeat checklist
-        checklist = heartbeat_file.read_text()
-
-        # Build heartbeat prompt
-        prompt = f"""[HEARTBEAT CHECK]
-
-Review the checklist below and check if anything needs attention:
-
-{checklist}
-
-If nothing needs attention, respond with exactly: HEARTBEAT_OK
-
-If something needs attention, briefly describe what and why.
-Keep it concise (1-2 sentences max).
-"""
-
-        try:
-            # Run with Haiku for cost efficiency
-            result = await self.assistant.process_message(
-                user=user_id,
-                message=prompt,
-                model_hint="haiku"  # Use Haiku for heartbeats
-            )
-
-            response = result.get("response", "")
-
-            # Log heartbeat result
-            self._log_heartbeat(user_id, response)
-
-            # Update last heartbeat time
-            self._update_last_heartbeat(user_id)
-
-            # Check if action needed
-            if "HEARTBEAT_OK" in response:
-                logger.info(f"Heartbeat OK for {user_id}")
-            else:
-                logger.info(f"Heartbeat alert for {user_id}: {response[:100]}")
-                # Note: In a real implementation, you might want to send a notification here
-                # For now, the response is just logged
-
-        except Exception as e:
-            logger.error(f"Error running heartbeat for {user_id}: {e}")
-
-    def _create_default_heartbeat(self, user_id: str, heartbeat_file: Path):
-        """Create default HEARTBEAT.md file"""
-        default_content = """# Heartbeat Checklist
-
-This checklist is reviewed every heartbeat (default: 30 minutes).
-
-## Checks
-
-- [ ] Any urgent messages or notifications?
-- [ ] Any tasks due soon?
-- [ ] Any errors or issues that need attention?
-
-## Instructions
-
-Only respond if something genuinely needs attention.
-Otherwise, respond with: HEARTBEAT_OK
-
-Keep responses brief and actionable.
-"""
-        heartbeat_file.write_text(default_content)
-        logger.info(f"Created default HEARTBEAT.md for {user_id}")
-
-    def _log_heartbeat(self, user_id: str, result: str):
-        """Log heartbeat result to database"""
-        import sqlite3
-        import json
-
-        try:
-            with sqlite3.connect(self.assistant.context_manager.db_path) as conn:
-                cursor = conn.cursor()
-
-                # Store in heartbeat_log table
-                cursor.execute("""
-                    INSERT INTO heartbeat_log (user_id, result, checks_run)
-                    VALUES (?, ?, ?)
-                """, (user_id, result, json.dumps({"default": True})))
-
-                conn.commit()
-
-        except Exception as e:
-            logger.error(f"Error logging heartbeat: {e}")
-
-    def _update_last_heartbeat(self, user_id: str):
-        """Update last heartbeat timestamp"""
-        import sqlite3
-
-        try:
-            with sqlite3.connect(self.assistant.context_manager.db_path) as conn:
-                cursor = conn.cursor()
-
-                now = datetime.now(timezone.utc).isoformat()
-
-                cursor.execute("""
-                    UPDATE contexts
-                    SET last_heartbeat = ?
-                    WHERE user_id = ?
-                """, (now, user_id))
-
-                conn.commit()
-
-        except Exception as e:
-            logger.error(f"Error updating last heartbeat: {e}")
-
-    def enable_for_user(self, user_id: str, interval: Optional[int] = None):
-        """Enable heartbeat for a user"""
-        import sqlite3
-
-        interval = interval or self.default_interval
-
-        try:
-            with sqlite3.connect(self.assistant.context_manager.db_path) as conn:
-                cursor = conn.cursor()
-
-                cursor.execute("""
-                    UPDATE contexts
-                    SET heartbeat_enabled = 1,
-                        heartbeat_interval = ?
-                    WHERE user_id = ?
-                """, (interval, user_id))
-
-                conn.commit()
-
-            logger.info(f"Enabled heartbeat for {user_id} (interval: {interval}s)")
-
-        except Exception as e:
-            logger.error(f"Error enabling heartbeat: {e}")
-
-    def disable_for_user(self, user_id: str):
-        """Disable heartbeat for a user"""
-        import sqlite3
-
-        try:
-            with sqlite3.connect(self.assistant.context_manager.db_path) as conn:
-                cursor = conn.cursor()
-
-                cursor.execute("""
-                    UPDATE contexts
-                    SET heartbeat_enabled = 0
-                    WHERE user_id = ?
-                """, (user_id,))
-
-                conn.commit()
-
-            logger.info(f"Disabled heartbeat for {user_id}")
-
-        except Exception as e:
-            logger.error(f"Error disabling heartbeat: {e}")
-
-
-if __name__ == "__main__":
-    # Simple test
-    print("Heartbeat Scheduler")
-    print("=" * 60)
-    print("\nThis module implements simple periodic checks.")
-    print("\nKey features:")
-    print("  - Runs every 30 minutes (configurable)")
-    print("  - Reads HEARTBEAT.md checklist")
-    print("  - Returns HEARTBEAT_OK if nothing needs attention")
-    print("  - Uses Haiku model for cost efficiency")
-    print("  - Context-aware (maintains conversation memory)")
-    print("\nMuch simpler than cron!")
+            last_run = self._last_runs.get(task.name)
+            if is_task_due(task.schedule, last_run, now, self.interval):
+                try:
+                    await self.run_task(task)
+                except Exception as e:
+                    logger.error(f"Error running scheduled task {task.name}: {e}")

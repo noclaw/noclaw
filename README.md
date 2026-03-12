@@ -1,6 +1,6 @@
 # NoClaw
 
-A minimal personal assistant powered by the Claude Agent SDK. Supports parallel agents and a shared workspace. Small enough to understand. Built to be customized for your exact needs.
+A personal AI assistant powered by the Claude Code CLI. Capable of parallel sub-agents, browser automation, scheduled tasks, and full desktop control on macOS. Tasks arrive via Telegram, Slack, webhooks, or a CLI client. Runs natively on macOS or in Docker.
 
 ## Quick Start
 
@@ -10,40 +10,41 @@ cd noclaw
 python3 setup.py
 ```
 
-The interactive setup handles dependencies, agentpool, `.env` configuration, and optional Telegram/Slack channel setup. See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
+The interactive setup handles dependencies, `.env` configuration, and optional Telegram/Slack channel setup. See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 
 ## Philosophy
 
-**KISS - Keep it Simple** Thin server that delegates to agentpool. No frameworks, no complexity.
+**KISS - Keep it Simple** Thin server that runs a Claude agent. No frameworks, no complexity.
 
 **Built for you** This is working software for you. Ask Claude Code to make it do what you want.
 
-**Goldilocks Architecture** Not too minimal (NanoClaw), not too bloated (OpenClaw), but just right.
+**Goldilocks Architecture** Not too minimal, not too bloated, but just right.
 
 ## What It Does
 
-- **HTTP Webhooks** - Universal API that works with any service
-- **Parallel Agents** - Run multiple agents on independent tasks simultaneously
-- **Shared Workspace** - Agent workspace with its own skills, memory, and files
-- **Model Selection** - Choose Haiku/Sonnet/Opus per request, track usage
-- **Heartbeat Scheduling** - Simple periodic checks without cron syntax
-- **Enhanced Memory** - 10-turn history with auto-archival after 50 messages
-- **Monitoring Dashboard** - Real-time dashboard with Server-Sent Events
-- **Channel Plugins** - Telegram and Slack auto-start when env vars are set
-- **Interactive Setup** - Single `setup.py` for dependencies, .env, and channel configuration
-- **Bundled Skills** - Cron scheduling via `/add-cron`
-- **Real Claude SDK** - Full Claude Code capabilities via [agentpool](https://github.com/noclaw/agentpool)
+- **CLI Agent** — Runs Claude Code CLI as a subprocess with structured JSON output
+- **SDK Agent** — Optional fast programmatic execution via Claude Agent SDK
+- **CLI Client** — `noclaw send`, `noclaw reply`, `noclaw status` from any machine
+- **Session Resume** — Multi-turn conversations with `noclaw reply`
+- **Mac App Control** — Screenshots, clicks, typing via cliclick and AppleScript
+- **HTTP Webhooks** — Universal API that works with any service
+- **Shared Workspace** — Agent workspace with skills, memory, and files
+- **Model Selection** — Choose Haiku/Sonnet/Opus per request
+- **Heartbeat Task Runner** — Scheduled and on-demand tasks as markdown files
+- **Enhanced Memory** — 10-turn history with auto-archival after 50 messages
+- **Monitoring Dashboard** — Real-time dashboard with Server-Sent Events
+- **Channel Plugins** — Telegram and Slack auto-start when env vars are set
+- **Agent Skills** — Gmail, Calendar, Google Docs/Sheets/Drive, web browsing, mac control
 
 ## Architecture
 
 ```
-HTTP Request → FastAPI → SQLite → AgentPool → Claude SDK → Response
-                 ↓          ↓                      ↓
-            [Simple]   [Persistent]            [Parallel
-                                                agents]
+CLI Client / HTTP / Channel → FastAPI → Agent (CLI subprocess) → Response
+                                 ↓
+                             [SQLite]
 ```
 
-Single Python process. Claude SDK runs on the host via agentpool. Production isolation via Docker container.
+Single Python process. CLI agent runs as a subprocess with `--output-format stream-json`. Runs natively on macOS or in Docker.
 
 ## Usage
 
@@ -52,28 +53,29 @@ Start the server:
 python run_assistant.py
 ```
 
-Send a message:
+Send a message (CLI client):
+```bash
+./noclaw send "Check my email and summarize"
+```
+
+Continue a conversation:
+```bash
+./noclaw reply "Thanks, now forward the important ones"
+```
+
+Monitor:
+```bash
+./noclaw status       # Active sessions
+./noclaw health       # Server health
+./noclaw dashboard    # Open web dashboard
+```
+
+Or use curl:
 ```bash
 curl -X POST http://localhost:3000/webhook \
   -H "Content-Type: application/json" \
-  -d '{"user": "alice", "message": "Schedule a daily standup summary"}'
+  -d '{"message": "Check my email and summarize"}'
 ```
-
-Run parallel agents:
-```bash
-curl -X POST http://localhost:3000/webhook \
-  -H "Content-Type: application/json" \
-  -d '{"user": "alice", "tasks": ["Review auth module", "Write API tests"], "max_agents": 2}'
-```
-
-## Docker
-
-```bash
-docker compose up -d
-docker compose logs -f
-```
-
-Requires a configured `.env` file (run `python3 setup.py` first). Google credentials, if set up, are mounted automatically. See [docs/DEPLOY.md](docs/DEPLOY.md) for production deployment details.
 
 ## Customizing
 
@@ -81,100 +83,79 @@ There are no configuration files. Just tell Claude Code what you want:
 
 - "Add email support"
 - "Make responses shorter"
-- "Add a Slack integration"
-- "Store conversation summaries"
+- "Add a web browsing skill"
 
 The codebase is small enough that Claude can safely modify it.
 
 ## File Structure
 
 ```
+├── noclaw                    # CLI client (single-file, stdlib only)
 ├── server/                   # Core server
-│   ├── assistant.py          # Main orchestrator (uses agentpool)
+│   ├── assistant.py          # Main orchestrator
+│   ├── agent/                # Agent execution
+│   │   ├── __init__.py       # run_task() entry point
+│   │   ├── cli_session.py    # CLI agent (subprocess + stream-json)
+│   │   ├── sdk_session.py    # SDK agent
+│   │   ├── registry.py       # Active session tracking
+│   │   ├── session.py        # Task, SessionResult
+│   │   └── config.py         # AgentConfig
 │   ├── context_manager.py    # User contexts + memory
 │   ├── channels/             # Channel plugins (auto-discovered)
-│   │   ├── base.py           # Channel base class
-│   │   ├── telegram_bot.py   # Telegram channel
-│   │   └── slack_bot.py      # Slack channel
-│   ├── heartbeat.py          # Heartbeat scheduler
-│   ├── security.py           # SecurityPolicy
+│   ├── heartbeat.py          # Heartbeat task runner
+│   ├── security.py           # Workspace validation
 │   ├── logger.py             # Structured logging
 │   └── dashboard.py          # Monitoring dashboard
-├── tests/                    # Test suite
-├── .claude/skills/           # Developer skills (modify NoClaw code)
-│   └── add-cron/             # Advanced cron scheduling
-├── docs/                     # Documentation
-│   ├── ARCHITECTURE.md       # Architecture guide
-│   └── PLUGINS.md            # Plugin architecture
 ├── workspace/                # Shared agent workspace
-│   ├── .claude/              # Agent skills (for performing tasks)
-│   │   ├── skills/           # direct-integrations, etc.
-│   │   └── scripts/          # Python scripts (Gmail, Calendar, etc.)
-│   ├── CLAUDE.md             # Agent instructions (regenerated each run)
+│   ├── .claude/skills/       # Agent skills (active)
+│   ├── .claude/tasks/        # Scheduled and on-demand tasks
+│   ├── CLAUDE.md             # Agent instructions
 │   ├── memory.md             # Persistent facts
-│   └── files/                # User files
-└── data/                     # Runtime data
-    ├── assistant.db          # SQLite database
-    └── agents.jsonl          # Agent performance log (optional)
+│   └── files/                # User files and reports
+├── available-skills/         # Platform-specific skills (copied during setup)
+├── tests/                    # Test suite
+├── .claude/skills/           # Developer skills
+└── data/                     # Runtime data (SQLite, logs)
 ```
 
 ## Channels
-
-Channels are communication plugins that auto-start when their env vars are set. No code changes needed.
 
 | Channel | Enable with | Dependency |
 |---------|-------------|------------|
 | Telegram | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_USER_ID` | `pip install python-telegram-bot` |
 | Slack | `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` | `pip install slack-bolt` |
 
-Run `python3 setup.py` for guided channel setup, or set env vars manually.
+Run `python3 setup.py` for guided channel setup. See [docs/PLUGINS.md](docs/PLUGINS.md) for adding custom channels.
 
-See [docs/PLUGINS.md](docs/PLUGINS.md) for how to add your own channels.
+## Deployment
 
-## Contributing
+### Native macOS (Mac Mini)
+- Full desktop control (screenshots, mouse/keyboard, AppleScript)
+- Run `python3 setup.py` to detect platform and install mac-control skill
+- See [docs/MAC-MINI-SETUP.md](docs/MAC-MINI-SETUP.md) for the complete setup guide (permissions, auto-start, networking)
 
-**Add channels or skills.**
-
-Want to add a new channel? Create `server/channels/my_channel.py` extending the `Channel` base class. It's auto-discovered on startup.
-
-For other features, create `.claude/skills/add-{feature}/SKILL.md` that teaches Claude Code how to add it.
-
-### Suggested Channels to Contribute
-
-- **Discord** - Discord bot
-- **Email** - IMAP/SMTP
-- **SMS** - Twilio
-- **Matrix** - Matrix chat
+### Docker
+- For headless server deployment
+- `docker compose up -d`
+- See [Dockerfile.server](Dockerfile.server) and [docker-compose.yml](docker-compose.yml)
 
 ## Requirements
 
 - Python 3.10+
-- [agentpool](https://github.com/noclaw/agentpool) (`pip install -e /path/to/agentpool`)
-- Docker (optional, for production deployment)
+- Claude Code CLI (`npm install -g @anthropic-ai/claude-code`)
+- macOS for desktop control features (optional)
+- cliclick (`brew install cliclick`) — for Mac app control (optional)
 
 ## Security
 
-- Workspace paths validated by SecurityPolicy before use
-- Production isolation by running NoClaw in a Docker container
-- Resource limits (memory, CPU, timeouts) via agentpool config
-
-## FAQ
-
-**Why webhooks instead of Telegram/Discord/etc?**
-Webhooks are the universal foundation. Telegram and Slack ship as channel plugins — just set env vars. Add more channels by dropping a file in `server/channels/`.
-
-**Do I need Docker?**
-No. Docker is only needed for production deployment. For development, run directly with `python run_assistant.py`.
-
-**How do I debug issues?**
-Ask Claude Code. Check `data/agents.jsonl` for agent-level logs if `AGENT_LOG_FILE` is set.
+- Workspace paths validated before agent execution
+- API key authentication on all endpoints (optional)
 
 ## License
 
 MIT
 
-## Acknowledgement
+## Acknowledgements
 
-Inspired by [NanoClaw](https://github.com/gavrielc/nanoclaw)
-
-Agent skills for querying Gmail, Google Calendar, Google Drive, Docs, and Sheets are based on [claude-code-second-brain](https://github.com/dynamous-community/workshops/tree/main/claude-code-second-brain) — a private repo by Cole Medin for [Dynamous](https://dynamous.ai/) members.
+- [NanoClaw](https://github.com/gavrielc/nanoclaw) — Original inspiration
+- [claude-code-second-brain](https://github.com/dynamous-community/workshops/tree/main/claude-code-second-brain) — Agent skills for Google integrations (by Cole Medin / [Dynamous](https://dynamous.ai/))

@@ -64,7 +64,7 @@ class TelegramBot(Channel):
     def _authorized(self, user_id: int) -> bool:
         return user_id in self.allowed_users
 
-    def _noclaw_user(self, telegram_id: int) -> str:
+    def _channel_name(self, telegram_id: int) -> str:
         return f"telegram_{telegram_id}"
 
     async def _cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -96,22 +96,19 @@ class TelegramBot(Channel):
         if not self._authorized(update.effective_user.id):
             await update.message.reply_text("Unauthorized.")
             return
-        user_id = self._noclaw_user(update.effective_user.id)
-        user_context = self.assistant.context_manager.get_user_context(user_id)
-        history = self.assistant.context_manager.get_history(user_id, limit=100)
+        channel = self._channel_name(update.effective_user.id)
+        history = self.assistant.context_manager.get_history(channel, limit=100)
         await update.message.reply_text(
             f"Bot Status: Online\n\n"
-            f"Messages: {len(history)} in history\n"
-            f"Workspace: {user_context['workspace_path']}\n"
-            f"Last active: {user_context.get('last_active', 'Unknown')}"
+            f"Channel: {channel}\n"
+            f"Messages: {len(history)} in history"
         )
 
     async def _cmd_memory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._authorized(update.effective_user.id):
             await update.message.reply_text("Unauthorized.")
             return
-        user_id = self._noclaw_user(update.effective_user.id)
-        memory = self.assistant.context_manager.get_memory(user_id)
+        memory = self.assistant.context_manager.get_memory()
         if len(memory.strip()) <= 50:
             await update.message.reply_text("Memory is empty. I'll remember facts as we chat!")
         else:
@@ -123,22 +120,21 @@ class TelegramBot(Channel):
         if not self._authorized(update.effective_user.id):
             await update.message.reply_text("Unauthorized.")
             return
-        user_id = self._noclaw_user(update.effective_user.id)
-        self.assistant.context_manager.clear_memory(user_id)
+        self.assistant.context_manager.clear_memory()
         await update.message.reply_text("Memory cleared!")
 
     async def _handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._authorized(update.effective_user.id):
             await update.message.reply_text("Unauthorized.")
             return
-        user_id = self._noclaw_user(update.effective_user.id)
+        channel = self._channel_name(update.effective_user.id)
         message = update.message.text
-        logger.info(f"Message from {user_id}: {message[:50]}...")
+        logger.info(f"Message from {channel}: {message[:50]}...")
         await update.message.chat.send_action("typing")
 
         try:
             result = await self.assistant.process_message(
-                user=user_id, message=message, model_hint=self.model_hint,
+                channel=channel, message=message, model_hint=self.model_hint,
             )
             response = result.get("response", "Sorry, I couldn't process that.")
             if len(response) > 4096:
@@ -158,13 +154,12 @@ class TelegramBot(Channel):
     async def _handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._authorized(update.effective_user.id):
             return
-        user_id = self._noclaw_user(update.effective_user.id)
+        channel = self._channel_name(update.effective_user.id)
         document = update.message.document
-        logger.info(f"Document from {user_id}: {document.file_name}")
+        logger.info(f"Document from {channel}: {document.file_name}")
 
         try:
-            user_context = self.assistant.context_manager.get_user_context(user_id)
-            workspace = Path(user_context["workspace_path"])
+            workspace = self.assistant.context_manager.workspace_dir
             files_dir = workspace / "files"
             files_dir.mkdir(exist_ok=True)
 
@@ -177,7 +172,7 @@ class TelegramBot(Channel):
             await update.message.chat.send_action("typing")
 
             result = await self.assistant.process_message(
-                user=user_id, message=message, model_hint=self.model_hint,
+                channel=channel, message=message, model_hint=self.model_hint,
             )
             await update.message.reply_text(result.get("response", "File received."))
         except Exception as e:
@@ -189,10 +184,10 @@ class TelegramBot(Channel):
             return
         await update.message.reply_text("Photo received. Image analysis requires vision capabilities — I can only respond to your caption for now.")
         if update.message.caption:
-            user_id = self._noclaw_user(update.effective_user.id)
+            channel = self._channel_name(update.effective_user.id)
             await update.message.chat.send_action("typing")
             result = await self.assistant.process_message(
-                user=user_id, message=update.message.caption, model_hint=self.model_hint,
+                channel=channel, message=update.message.caption, model_hint=self.model_hint,
             )
             await update.message.reply_text(result.get("response", "Photo received."))
 

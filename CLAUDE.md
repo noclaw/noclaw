@@ -4,153 +4,117 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-**NoClaw** is a minimal personal assistant powered by the Claude Agent SDK via [agentpool](https://github.com/noclaw/agentpool). Key features:
-- Parallel agent execution — run multiple agents on independent tasks simultaneously
+**NoClaw** is a single-user personal AI assistant. It uses the Claude Code CLI as its primary agent, with the Claude Agent SDK as a secondary option. Tasks arrive via Telegram, Slack, webhooks, or a CLI client. Runs natively on macOS (with full desktop control) or in Docker.
+
+Key features:
+- CLI agent execution via subprocess with stream-json output
+- SDK agent execution for fast programmatic tasks
 - Shared workspace with agent-specific skills
 - Universal webhook API that works with any service
-- SQLite persistence for contexts and conversation history
+- SQLite persistence for channels and conversation history
+- Channel plugins (Telegram, Slack) auto-discovered from env vars
+- Heartbeat task runner for scheduled and on-demand tasks
 - AI-native platform — modify code directly rather than using config files
-- Small codebase designed to be understood and modified
 
-## Current Status: v0.3 - AgentPool Integration
+## Current Status: v0.5 - Unified Codebase
 
-### Core Features
-- ✅ **AgentPool Integration** - Parallel agents via agentpool
-- ✅ **Enhanced Memory** - 10-turn history, memory.md for persistent facts, auto-archival
-- ✅ **Model Selection** - Choose Haiku/Sonnet/Opus per request, track usage
-- ✅ **Heartbeat Scheduling** - Simple periodic checks without cron syntax
-- ✅ **Structured Logging** - Human console + optional JSON file for agent analysis
-- ✅ **Monitoring Dashboard** - Real-time dashboard with Server-Sent Events
-- ✅ **Startup Validation** - Comprehensive system checks on startup
-- ✅ **Channel Plugins** - Telegram and Slack auto-discovered from env vars
-- ✅ **Interactive Setup** - Consolidated `setup.py` for dependencies, .env, and channel configuration
-- ✅ **Bundled Skills** - Cron scheduling (`/add-cron`)
+See [docs/NOCLAW-MAC-PLAN.md](docs/NOCLAW-MAC-PLAN.md) for the full plan.
 
 ### Known Requirements
-- Network access: Required for Claude API
-- Docker (optional): For production deployment
+- Python 3.10+
+- Network access for Claude API
+- claude CLI (`npm install -g @anthropic-ai/claude-code`)
+- macOS for desktop control features (optional)
+- cliclick (`brew install cliclick`) — optional, for Mac app control
 
 ## Architecture
 
 ### Core Components
-- **[server/assistant.py](server/assistant.py)** - Main orchestrator, handles webhooks and coordination
-- **[server/context_manager.py](server/context_manager.py)** - User contexts, SQLite persistence, workspace management
-- **[server/channels/](server/channels/)** - Channel plugins (Telegram, Slack) with auto-discovery
-- **[server/heartbeat.py](server/heartbeat.py)** - Heartbeat scheduler for periodic checks
-- **[server/simple_scheduler.py](server/simple_scheduler.py)** - Minimal scheduler (no cron)
-- **[server/security.py](server/security.py)** - SecurityPolicy for workspace validation
-- **[server/dashboard.py](server/dashboard.py)** - Monitoring dashboard with SSE
-- **agentpool** (external) - Claude SDK agent orchestration, sandboxing, parallel execution
+- **[noclaw](noclaw)** — CLI client (single-file, stdlib only)
+- **[server/assistant.py](server/assistant.py)** — Main FastAPI orchestrator, handles webhooks and coordination
+- **[server/agent/](server/agent/)** — Agent execution (CLI and SDK modes)
+  - `__init__.py` — `run_task()` entry point
+  - `cli_session.py` — Primary: runs Claude CLI as subprocess with stream-json output
+  - `sdk_session.py` — Secondary: runs Claude Agent SDK
+  - `registry.py` — Active session tracking (in-memory)
+  - `session.py` — Task, SessionResult, SessionStatus
+  - `config.py` — AgentConfig
+- **[server/context_manager.py](server/context_manager.py)** — Channel tracking, message history, memory, SQLite persistence
+- **[server/channels/](server/channels/)** — Channel plugins (Telegram, Slack) with auto-discovery
+- **[server/heartbeat.py](server/heartbeat.py)** — Heartbeat task runner (reads workspace/.claude/tasks/)
+- **[server/security.py](server/security.py)** — Workspace validation (SecurityPolicy + validate_workspace)
+- **[server/dashboard.py](server/dashboard.py)** — Monitoring dashboard with SSE
 
 ### Data Structure
 ```
-.claude/                          # Developer skills (for modifying NoClaw code)
-├── skills/                       # /add-cron
-└── commands/                     # /prime
-
 workspace/                        # Shared agent workspace
-├── .claude/                      # Agent skills (for performing tasks)
-│   ├── skills/                   # direct-integrations, etc.
-│   └── scripts/                  # Python scripts (Gmail, Calendar, Asana, etc.)
+├── .claude/                      # Agent configuration
+│   ├── skills/                   # Agent skills (direct-integrations, web-browsing, etc.)
+│   ├── tasks/                    # Scheduled and on-demand task definitions
+│   └── scripts/                  # Python scripts (Gmail, Calendar, etc.)
 ├── CLAUDE.md                     # Agent instructions (regenerated each run)
 ├── memory.md                     # Persistent facts
-├── HEARTBEAT.md                  # Periodic check checklist (optional)
-├── files/                        # User files
-└── conversations/                # Archived conversations
+├── files/                        # User files and reports
+└── conversations/                # Archived conversation logs (when LOG_CONVERSATIONS=true)
 
 data/
-├── assistant.db                  # SQLite database (contexts, message_history, heartbeat_log)
+├── assistant.db                  # SQLite database (channels, message_history)
 └── agents.jsonl                  # Agent performance logs (optional)
 ```
 
-**Two `.claude/` directories:** Root `.claude/skills/` contains developer skills for modifying NoClaw code (invoked via Claude Code). `workspace/.claude/skills/` contains agent skills used during task execution (discovered via `setting_sources=["project"]`). See [docs/PLUGINS.md](docs/PLUGINS.md).
+`workspace/.claude/skills/` contains agent skills used during task execution. See [docs/PLUGINS.md](docs/PLUGINS.md).
+
+### Agent Execution
+- **CLI mode (default):** Runs `claude -p --output-format stream-json` as a subprocess. Structured JSON output with cost tracking and session resume (`--resume <session_id>`).
+- **SDK mode:** Runs Claude Agent SDK programmatically. Fast, no terminal visibility.
+- Agent works in `workspace/` directory with its own `.claude/skills/`
+- Parallel execution: webhook accepts `tasks` array for concurrent agents
+- Multi-turn: webhook accepts `resume` field with a session_id to continue a conversation
 
 ### Scheduling Model
 
-**Default: Heartbeat Scheduling**
-- Simple periodic checks (default: 30 minutes)
-- No cron syntax required
-- One turn checks multiple things (cost-efficient)
-- Smart suppression with HEARTBEAT_OK pattern
-- See [docs/HEARTBEAT.md](docs/HEARTBEAT.md)
+Tasks are markdown files in `workspace/.claude/tasks/` with human-readable schedules (`every morning`, `every 2 hours`, `every heartbeat`). The heartbeat loop runs them when due. Tasks without a schedule are available on-demand via `POST /tasks/{name}/run`.
 
-**Optional: Cron Scheduling**
-- Traditional cron expressions for exact timing
-- Available via `/add-cron` skill
-- Use when exact timing is required (9am daily, etc.)
-- See [.claude/skills/add-cron/SKILL.md](.claude/skills/add-cron/SKILL.md)
-
-**Why heartbeat by default?**
-- Simpler for most users (no cron syntax to learn)
-- More cost-efficient (one turn vs multiple)
-- Context-aware (maintains conversation memory)
-- Users who need cron can easily add it via skill
-
-### Agent Execution
-- Claude SDK runs on the host via agentpool's `run_session()`
-- Agent works in `workspace/` directory with its own `.claude/skills/`
-- Parallel execution: webhook accepts `tasks` array for independent concurrent agents
-- Production isolation: run NoClaw in a Docker container
-- **[Dockerfile.server](Dockerfile.server)** - FastAPI server container (optional deployment)
-- **[docker-compose.yml](docker-compose.yml)** - Server deployment configuration (optional)
+See [docs/HEARTBEAT.md](docs/HEARTBEAT.md)
 
 ## Development Guidelines
 
 ### When Modifying Code
-1. **Keep it simple** - This is a minimal example, not a framework
-2. **Security first** - Workspace validation via SecurityPolicy, container deployment for production
-3. **No config files** - Code is configuration, modify directly
-4. **Test with real Claude** - Use actual SDK responses, no mocks
+1. **Keep it simple** — This is a minimal codebase, not a framework
+2. **Security first** — Workspace validation, dedicated machine on local network
+3. **No config files** — Code is configuration, modify directly
+4. **Test with real Claude** — Use actual SDK/CLI responses, no mocks
 
 ### Channel Plugins
 Communication channels live in `server/channels/` and are auto-discovered on startup:
 - Each channel extends `Channel` base class with `start()`, `stop()`, `is_configured()`
 - Channels auto-start when their required env vars are set
-- Missing dependencies (e.g., `python-telegram-bot`) cause the channel to be silently skipped
-- See [docs/PLUGINS.md](docs/PLUGINS.md) for the plugin architecture
+- See [docs/PLUGINS.md](docs/PLUGINS.md)
 
 ### Adding Features
 For new channels: create a module in `server/channels/` extending `Channel` base class.
-For developer skills (modify NoClaw): create in `.claude/skills/{skill-name}/`.
 For agent skills (agent capabilities): create in `workspace/.claude/skills/{skill-name}/`.
-
-### Available Channels
-- **Telegram** - Set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_USER_ID` (run `python3 setup.py` for guided setup)
-- **Slack** - Set `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` (run `python3 setup.py` for guided setup)
-
-### Available Developer Skills (root `.claude/skills/`)
-1. **Scheduling**:
-   - `/add-cron` - Traditional cron scheduling (exact times)
-
-### Available Agent Skills (`workspace/.claude/skills/`)
-1. **Direct Integrations** — Gmail, Google Calendar, Asana, Slack, Google Sheets, Docs, Drive
-   - Scripts in `workspace/.claude/scripts/` with `uv` dependency management
-   - Setup: `python3 setup.py` (Google OAuth and `uv sync` handled automatically)
 
 ## Testing
 
 ```bash
+# Run test suite
+pytest tests/ -v
+
+# Run agent-specific tests
+pytest tests/test_agent_*.py -v
+
 # Start the server
 python run_assistant.py
 
-# Test single-agent webhook
+# Test with CLI client
+./noclaw send "Hello"
+./noclaw reply "Thanks"
+
+# Test webhook
 curl -X POST http://localhost:3000/webhook \
   -H "Content-Type: application/json" \
-  -d '{"user": "test", "message": "Hello"}'
-
-# Test parallel agents
-curl -X POST http://localhost:3000/webhook \
-  -H "Content-Type: application/json" \
-  -d '{"user": "test", "tasks": ["Summarize auth module", "List API endpoints"], "max_agents": 2}'
-
-# Run test suite
-bash tests/run_tests.sh
-
-# Or run individual tests
-python3 tests/test_security.py    # Security policy validation
-python3 tests/test_memory.py      # Enhanced memory system
-python3 tests/test_heartbeat.py   # Heartbeat scheduler
-python3 tests/test_claude.py      # Smoke test (requires server running)
+  -d '{"message": "Hello"}'
 ```
 
 ## Authentication
@@ -158,7 +122,6 @@ python3 tests/test_claude.py      # Smoke test (requires server running)
 ### Claude Authentication
 - Set `CLAUDE_CODE_OAUTH_TOKEN` in `.env` file
 - Get token with: `claude setup-token`
-- Token is picked up by the Claude SDK from the environment
 
 ### Webhook Authentication
 - Set `NOCLAW_API_KEY` in `.env` to require API key on all endpoints
@@ -167,7 +130,7 @@ python3 tests/test_claude.py      # Smoke test (requires server running)
 
 ## File References
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
+See [docs/NOCLAW-MAC-PLAN.md](docs/NOCLAW-MAC-PLAN.md) for the implementation plan.
 See [docs/PLUGINS.md](docs/PLUGINS.md) for the channel plugin architecture.
 See [QUICKSTART.md](QUICKSTART.md) for setup and installation instructions.
-See [README.md](README.md) for project overview and philosophy.
+See [README.md](README.md) for project overview.

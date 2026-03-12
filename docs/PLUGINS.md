@@ -1,52 +1,60 @@
-# Plugin Architecture
+# Plugins & Skills
 
-NoClaw uses a convention-based plugin system for communication channels and direct API integrations.
+NoClaw uses a convention-based plugin system for communication channels and agent skills.
 
 ## Philosophy
 
 - **Core stays minimal** — plugin infrastructure is ~50 lines
-- **Plugins work with env vars** — set tokens, restart, done
-- **Two skill directories** — developer skills in root `.claude/`, agent skills in `workspace/.claude/`
+- **Channels work with env vars** — set tokens, restart, done
+- **Skills give the agent capabilities** — add skills to `workspace/.claude/skills/`
 - **No registry, no config files** — drop a file in the directory, it's discovered automatically
+- **Code is config** — users can modify NoClaw directly with Claude Code, but the recommended way to extend capabilities is by adding agent skills
 
-## Two-Level Skill System
+## Agent Skills
 
-NoClaw has two separate `.claude/` directories, each serving a different purpose:
-
-### Root `.claude/` — Developer Skills
-
-Skills in `.claude/skills/` at the project root are for **developers working on the NoClaw codebase** using Claude Code. These skills modify NoClaw's code.
-
-```
-.claude/
-├── settings.local.json           # Claude Code permissions
-├── commands/
-│   └── prime.md                  # /prime command
-└── skills/
-    └── add-cron/                 # Add cron scheduling to NoClaw
-```
-
-These are invoked by the developer (e.g., `/add-cron`). Channel setup (Telegram, Slack) is handled by `python3 setup.py`.
-
-### `workspace/.claude/` — Agent Skills
-
-Skills in `workspace/.claude/skills/` are for **the NoClaw agent itself** during task execution. These give the agent capabilities to interact with external services.
+Skills in `workspace/.claude/skills/` give the NoClaw agent capabilities during task execution. Each skill has a `SKILL.md` that describes when to use it and how.
 
 ```
 workspace/.claude/
 └── skills/
-    └── direct-integrations/      # Gmail, Calendar, Sheets, Docs, Drive
+    ├── direct-integrations/   # Gmail, Calendar, Sheets, Docs, Drive, Slack
+    ├── web-browsing/          # Web search and page reading via agent-browser
+    ├── mac-control/           # Screenshots, clicks, typing via cliclick + AppleScript
+    └── terminal-control/      # Shell commands, processes, file management
 ```
 
-The agent discovers these via the Claude SDK's `setting_sources=["project"]` option, which reads `.claude/skills/` relative to the workspace directory.
+The agent discovers these via Claude's `setting_sources=["project"]` option, which reads `.claude/skills/` relative to the workspace directory.
 
-### Why two directories?
+### Built-in Skills
 
-- A developer running Claude Code on the noclaw repo sees root `.claude/skills/` — skills for modifying NoClaw itself
-- The NoClaw agent running in `workspace/` sees `workspace/.claude/skills/` — skills for performing tasks
-- They never interfere with each other
+| Skill | Triggers on | Tools used |
+|-------|-------------|------------|
+| **direct-integrations** | "check my email", "show calendar", "read spreadsheet" | Python scripts via `uv run` |
+| **web-browsing** | "search the web", "open this URL", "check this website" | `agent-browser` CLI |
+| **mac-control** | "open TextEdit", "take a screenshot", "AirDrop this file" | `screencapture`, `cliclick`, `osascript` |
+| **terminal-control** | "run this command", "check disk space", "install this" | Shell, `tmux`, `brew`, etc. |
 
-## Agent Integrations
+### Adding a Skill
+
+Create a directory in `workspace/.claude/skills/` with a `SKILL.md`:
+
+```
+workspace/.claude/skills/my-skill/
+└── SKILL.md
+```
+
+The `SKILL.md` frontmatter tells the agent when to use it:
+
+```markdown
+---
+name: my-skill
+description: Short description of what the skill does and when to trigger it.
+---
+
+# My Skill
+
+Instructions for the agent on how to use this skill...
+```
 
 ### Direct Integrations
 
@@ -61,7 +69,7 @@ The `direct-integrations` skill gives the agent access to external APIs via Pyth
 | Google Drive | Google OAuth | Find and list files |
 | Slack | Bot token | Channels, messages, send |
 
-### Script Structure
+#### Script Structure
 
 ```
 workspace/.claude/scripts/
@@ -69,7 +77,7 @@ workspace/.claude/scripts/
 ├── uv.lock                       # Locked dependency versions
 ├── .env                           # Credentials (override root .env)
 ├── config.py                      # Centralized configuration
-├── shared.py                      # Utilities 
+├── shared.py                      # Utilities
 └── integrations/
     ├── registry.py                # Integration discovery
     ├── auth.py                    # Google OAuth token management
@@ -80,7 +88,7 @@ workspace/.claude/scripts/
     └── drive_api.py               # Google Drive API
 ```
 
-### Setup
+#### Setup
 
 `python3 setup.py` handles Google OAuth and runs `uv sync` automatically. To install manually:
 
@@ -144,22 +152,21 @@ Every channel calls `self.assistant.process_message()` to process incoming messa
 
 ```python
 result = await self.assistant.process_message(
-    user=f"my_channel_{platform_user_id}",
+    channel=f"my_channel_{platform_user_id}",
     message=text,
     model_hint=os.getenv("MY_CHANNEL_MODEL_HINT", "sonnet"),
 )
 response = result.get("response", "Error processing message")
 ```
 
-### User ID convention
+### Channel naming convention
 
-Channels prefix platform user IDs: `telegram_12345`, `slack_U042VNB1G`. This gives each platform user their own conversation history while sharing a single workspace.
+Each channel creates a unique channel name: `telegram_12345`, `slack_U042VNB1G`. The API defaults to `api` or `api_{user}` if a user is specified. This gives each source its own conversation history while sharing a single workspace and memory.
 
 ## Extension Points Summary
 
 | Mechanism | Location | Purpose | How it works |
 |-----------|----------|---------|--------------|
 | Channel plugins | `server/channels/` | Communication interfaces | Drop file + set env vars, auto-discovered |
-| Developer skills | `.claude/skills/` | Modify NoClaw code | Claude Code reads SKILL.md, modifies codebase |
-| Agent skills | `workspace/.claude/skills/` | Agent capabilities | Agent reads SKILL.md, uses scripts during tasks |
+| Agent skills | `workspace/.claude/skills/` | Agent capabilities | Agent reads SKILL.md during task execution |
 | Agent scripts | `workspace/.claude/scripts/` | API integrations | Python scripts with uv dependency management |

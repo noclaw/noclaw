@@ -1,0 +1,384 @@
+#!/usr/bin/env python3
+"""
+noclaw — CLI client for NoClaw personal assistant.
+
+Sends requests and monitors the agent from any machine.
+Stdlib only — no pip dependencies.
+
+Usage:
+    noclaw send "Check email and summarize"
+    noclaw send -m opus "Research MacBook prices"
+    noclaw send --sdk "What's 2+2?"
+    noclaw status
+    noclaw health
+    noclaw history
+    noclaw logs <session-name>
+    noclaw kill <session-name>
+    noclaw dashboard
+
+Configuration (env vars or ~/.noclaw):
+    NOCLAW_URL      Server URL (default: http://localhost:3000)
+    NOCLAW_API_KEY  API key for authentication
+    NOCLAW_CHANNEL  Default channel name (default: api)
+"""
+
+import argparse
+import json
+import os
+import sys
+import urllib.request
+import urllib.error
+import webbrowser
+from pathlib import Path
+
+
+def load_config() -> dict:
+    """Load config from ~/.noclaw file and env vars. Env vars take precedence."""
+    config = {
+        "url": "http://localhost:3000",
+        "api_key": "",
+        "channel": "api",
+    }
+
+    # Read ~/.noclaw config file
+    config_file = Path.home() / ".noclaw"
+    if config_file.exists():
+        for line in config_file.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, _, value = line.partition("=")
+                key = key.strip().lower()
+                value = value.strip().strip("'\"")
+                if key == "url":
+                    config["url"] = value
+                elif key in ("api_key", "apikey", "key"):
+                    config["api_key"] = value
+                elif key == "channel":
+                    config["channel"] = value
+                elif key == "user":
+                    # Backwards compat: user=jeff → channel=api_jeff
+                    config["channel"] = f"api_{value}"
+
+    # Env vars override
+    if os.environ.get("NOCLAW_URL"):
+        config["url"] = os.environ["NOCLAW_URL"]
+    if os.environ.get("NOCLAW_API_KEY"):
+        config["api_key"] = os.environ["NOCLAW_API_KEY"]
+    if os.environ.get("NOCLAW_CHANNEL"):
+        config["channel"] = os.environ["NOCLAW_CHANNEL"]
+    elif os.environ.get("NOCLAW_USER"):
+        # Backwards compat
+        config["channel"] = f"api_{os.environ['NOCLAW_USER']}"
+
+    config["url"] = config["url"].rstrip("/")
+    return config
+
+
+def api_request(config: dict, method: str, path: str, data: dict = None) -> dict:
+    """Make an API request to the NoClaw server."""
+    url = f"{config['url']}{path}"
+    body = json.dumps(data).encode() if data else None
+
+    req = urllib.request.Request(url, data=body, method=method)
+    req.add_header("Content-Type", "application/json")
+    if config["api_key"]:
+        req.add_header("X-API-Key", config["api_key"])
+
+    try:
+        with urllib.request.urlopen(req, timeout=600) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        try:
+            detail = json.loads(body).get("detail", body)
+        except json.JSONDecodeError:
+            detail = body
+        print(f"Error {e.code}: {detail}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"Connection failed: {e.reason}", file=sys.stderr)
+        print(f"Is the server running at {config['url']}?", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_send(args, config):
+    """Send a message to the agent."""
+    message = " ".join(args.message)
+    if not message:
+        print("Error: no message provided", file=sys.stderr)
+        sys.exit(1)
+
+    payload = {
+        "channel": args.channel or config["channel"],
+        "message": message,
+    }
+    if args.model:
+        payload["model_hint"] = args.model
+    if args.sdk:
+        payload["mode"] = "sdk"
+
+    print(f"Sending to {config['url']}...")
+    print()
+
+    result = api_request(config, "POST", "/webhook", payload)
+
+    response = result.get("response", "")
+    if response:
+        print(response)
+    else:
+        print(json.dumps(result, indent=2))
+
+    # Save session_id for reply
+    session_id = result.get("session_id")
+    if session_id:
+        _save_last_session(session_id)
+        if args.verbose:
+            print()
+            print(f"session_id: {session_id}")
+
+    # Show metadata if verbose
+    meta = result.get("metadata", {})
+    if args.verbose and meta:
+        print()
+        print(f"--- metadata ---")
+        for k, v in meta.items():
+            print(f"  {k}: {v}")
+
+
+def _session_file() -> Path:
+    return Path.home() / ".noclaw-session"
+
+
+def _save_last_session(session_id: str) -> None:
+    _session_file().write_text(session_id)
+
+
+def _load_last_session() -> str:
+    f = _session_file()
+    if f.exists():
+        return f.read_text().strip()
+    return ""
+
+
+def cmd_reply(args, config):
+    """Reply to continue a previous agent session."""
+    message = " ".join(args.message)
+    if not message:
+        print("Error: no message provided", file=sys.stderr)
+        sys.exit(1)
+
+    # Resolve session ID
+    session_id = args.session or _load_last_session()
+    if not session_id:
+        print("Error: no session to reply to. Use --session <id> or run 'noclaw send' first.", file=sys.stderr)
+        sys.exit(1)
+
+    payload = {
+        "channel": args.channel or config["channel"],
+        "message": message,
+        "resume": session_id,
+    }
+    if args.model:
+        payload["model_hint"] = args.model
+
+    print(f"Replying to session {session_id[:8]}...")
+    print()
+
+    result = api_request(config, "POST", "/webhook", payload)
+
+    response = result.get("response", "")
+    if response:
+        print(response)
+    else:
+        print(json.dumps(result, indent=2))
+
+    # Update saved session (may get a new ID on fork)
+    new_session_id = result.get("session_id")
+    if new_session_id:
+        _save_last_session(new_session_id)
+
+
+def cmd_status(args, config):
+    """Show active agent sessions."""
+    result = api_request(config, "GET", "/sessions")
+    sessions = result.get("sessions", [])
+
+    if not sessions:
+        print("No active agent sessions.")
+        return
+
+    print(f"{len(sessions)} active session(s):")
+    print()
+    for s in sessions:
+        attached = "attached" if s.get("attached") else "detached"
+        print(f"  {s['name']}  ({s.get('windows', '?')} windows, {attached})")
+        if s.get("created"):
+            print(f"    created: {s['created']}")
+
+
+def cmd_health(args, config):
+    """Show server health."""
+    result = api_request(config, "GET", "/health")
+
+    status = result.get("status", "unknown")
+    print(f"Status: {status}")
+
+    checks = result.get("checks", {})
+    for k, v in checks.items():
+        print(f"  {k}: {v}")
+
+
+def cmd_history(args, config):
+    """Show conversation history for a channel."""
+    channel = args.channel_name or config["channel"]
+    result = api_request(config, "GET", f"/history/{channel}")
+    history = result.get("history", [])
+
+    if not history:
+        print(f"No history for channel '{channel}'.")
+        return
+
+    for entry in history:
+        role = entry.get("role", "?")
+        content = entry.get("content", "")
+        timestamp = entry.get("timestamp", "")
+
+        prefix = ">>>" if role == "user" else "   "
+        # Truncate long responses for display
+        if len(content) > 200 and not args.full:
+            content = content[:200] + "..."
+
+        if timestamp:
+            print(f"{prefix} [{timestamp}] {content}")
+        else:
+            print(f"{prefix} {content}")
+
+
+def cmd_logs(args, config):
+    """Show logs from an agent session."""
+    name = args.session_name
+    lines = args.lines or 100
+    result = api_request(config, "GET", f"/sessions/{name}/logs?lines={lines}")
+    output = result.get("output", "")
+    if output:
+        print(output)
+    else:
+        print(f"No output from session '{name}'.")
+
+
+def cmd_kill(args, config):
+    """Kill an agent session."""
+    name = args.session_name
+    result = api_request(config, "POST", f"/sessions/{name}/kill")
+    status = result.get("status", "unknown")
+    print(f"Session '{name}': {status}")
+
+
+def cmd_dashboard(args, config):
+    """Open the dashboard in the browser."""
+    url = f"{config['url']}/dashboard"
+    print(f"Opening {url}")
+    webbrowser.open(url)
+
+
+def cmd_tasks(args, config):
+    """List scheduled tasks."""
+    channel = args.channel_name or config["channel"]
+    result = api_request(config, "GET", f"/tasks/{channel}")
+    tasks = result.get("tasks", [])
+
+    if not tasks:
+        print(f"No scheduled tasks for channel '{channel}'.")
+        return
+
+    for t in tasks:
+        print(f"  [{t.get('id', '?')}] {t.get('cron', '?')} — {t.get('prompt', '?')}")
+        if t.get("description"):
+            print(f"       {t['description']}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="noclaw",
+        description="CLI client for NoClaw personal assistant",
+    )
+    parser.add_argument("--url", help="Server URL (default: $NOCLAW_URL or http://localhost:3000)")
+    parser.add_argument("--api-key", help="API key (default: $NOCLAW_API_KEY)")
+
+    sub = parser.add_subparsers(dest="command")
+
+    # send
+    p_send = sub.add_parser("send", help="Send a message to the agent")
+    p_send.add_argument("message", nargs="+", help="Message to send")
+    p_send.add_argument("-c", "--channel", help="Channel name (default: from config)")
+    p_send.add_argument("-m", "--model", help="Model hint (haiku/sonnet/opus)")
+    p_send.add_argument("--sdk", action="store_true", help="Use SDK mode instead of CLI")
+    p_send.add_argument("-v", "--verbose", action="store_true", help="Show metadata")
+
+    # reply
+    p_reply = sub.add_parser("reply", help="Reply to continue a previous session")
+    p_reply.add_argument("message", nargs="+", help="Reply message")
+    p_reply.add_argument("-c", "--channel", help="Channel name (default: from config)")
+    p_reply.add_argument("-m", "--model", help="Model hint (haiku/sonnet/opus)")
+    p_reply.add_argument("-s", "--session", help="Session ID to resume (default: last session)")
+
+    # status
+    sub.add_parser("status", help="Show active agent sessions")
+
+    # health
+    sub.add_parser("health", help="Show server health")
+
+    # history
+    p_hist = sub.add_parser("history", help="Show conversation history")
+    p_hist.add_argument("channel_name", nargs="?", help="Channel name")
+    p_hist.add_argument("--full", action="store_true", help="Show full messages")
+
+    # logs
+    p_logs = sub.add_parser("logs", help="Show session logs")
+    p_logs.add_argument("session_name", help="Session name")
+    p_logs.add_argument("-n", "--lines", type=int, help="Number of lines (default: 100)")
+
+    # kill
+    p_kill = sub.add_parser("kill", help="Kill an agent session")
+    p_kill.add_argument("session_name", help="Session name")
+
+    # dashboard
+    sub.add_parser("dashboard", help="Open dashboard in browser")
+
+    # tasks
+    p_tasks = sub.add_parser("tasks", help="List scheduled tasks")
+    p_tasks.add_argument("channel_name", nargs="?", help="Channel name")
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(0)
+
+    config = load_config()
+
+    # CLI overrides
+    if args.url:
+        config["url"] = args.url.rstrip("/")
+    if args.api_key:
+        config["api_key"] = args.api_key
+
+    commands = {
+        "send": cmd_send,
+        "reply": cmd_reply,
+        "status": cmd_status,
+        "health": cmd_health,
+        "history": cmd_history,
+        "logs": cmd_logs,
+        "kill": cmd_kill,
+        "dashboard": cmd_dashboard,
+        "tasks": cmd_tasks,
+    }
+
+    commands[args.command](args, config)
+
+
+if __name__ == "__main__":
+    main()

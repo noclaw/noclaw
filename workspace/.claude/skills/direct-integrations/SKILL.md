@@ -11,40 +11,44 @@ Query Gmail, Calendar, Slack, Sheets, Docs, and Drive directly — no MCP needed
 
 `.claude/skills/direct-integrations/scripts/query.py`
 
+Dependencies are managed by `uv` in `.claude/scripts/`. Use the venv python to run commands:
+
 ## Running Commands
 
 ```bash
+QUERY=".claude/scripts/.venv/bin/python .claude/skills/direct-integrations/scripts/query.py"
+
 # Gmail
-python .claude/skills/direct-integrations/scripts/query.py gmail list [--max N] [--query Q] [--unread] [--hours N]
-python .claude/skills/direct-integrations/scripts/query.py gmail urgent [--hours N]
-python .claude/skills/direct-integrations/scripts/query.py gmail unread
-python .claude/skills/direct-integrations/scripts/query.py gmail read <message_id>
+$QUERY gmail list [--max N] [--query Q] [--unread] [--hours N]
+$QUERY gmail urgent [--hours N]
+$QUERY gmail unread
+$QUERY gmail read <message_id>
 
 # Calendar
-python .claude/skills/direct-integrations/scripts/query.py calendar today
-python .claude/skills/direct-integrations/scripts/query.py calendar upcoming [--hours N]
-python .claude/skills/direct-integrations/scripts/query.py calendar soon
+$QUERY calendar today
+$QUERY calendar upcoming [--hours N]
+$QUERY calendar soon
 
 # Slack
-python .claude/skills/direct-integrations/scripts/query.py slack channels
-python .claude/skills/direct-integrations/scripts/query.py slack messages <channel> [--hours N]
-python .claude/skills/direct-integrations/scripts/query.py slack send <channel> <message>
-python .claude/skills/direct-integrations/scripts/query.py slack check
+$QUERY slack channels
+$QUERY slack messages <channel> [--hours N]
+$QUERY slack send <channel> <message>
+$QUERY slack check
 
 # Google Sheets
-python .claude/skills/direct-integrations/scripts/query.py sheets read <spreadsheet_id> [--range "Sheet1!A1:Z100"] [--max-rows N]
-python .claude/skills/direct-integrations/scripts/query.py sheets info <spreadsheet_id>
-python .claude/skills/direct-integrations/scripts/query.py sheets write <spreadsheet_id> --range "A1" --values '[["a","b"]]'
-python .claude/skills/direct-integrations/scripts/query.py sheets append <spreadsheet_id> --range "A:Z" --values '[["new","row"]]'
+$QUERY sheets read <spreadsheet_id> [--range "Sheet1!A1:Z100"] [--max-rows N]
+$QUERY sheets info <spreadsheet_id>
+$QUERY sheets write <spreadsheet_id> --range "A1" --values '[["a","b"]]'
+$QUERY sheets append <spreadsheet_id> --range "A:Z" --values '[["new","row"]]'
 
 # Google Docs
-python .claude/skills/direct-integrations/scripts/query.py docs read <document_id> [--max-chars N]
-python .claude/skills/direct-integrations/scripts/query.py docs info <document_id>
+$QUERY docs read <document_id> [--max-chars N]
+$QUERY docs info <document_id>
 
 # Google Drive
-python .claude/skills/direct-integrations/scripts/query.py drive find "search term" [--type spreadsheet|document|folder|presentation|pdf] [--max N]
-python .claude/skills/direct-integrations/scripts/query.py drive list [--type TYPE] [--max N]
-python .claude/skills/direct-integrations/scripts/query.py drive get <file_id>
+$QUERY drive find "search term" [--type spreadsheet|document|folder|presentation|pdf] [--max N]
+$QUERY drive list [--type TYPE] [--max N]
+$QUERY drive get <file_id>
 ```
 
 ## Setup

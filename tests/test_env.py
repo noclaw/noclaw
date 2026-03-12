@@ -37,6 +37,7 @@ print(f"  DATA_DIR: {os.getenv('DATA_DIR', 'data')}")
 print(f"  AGENT_TIMEOUT: {os.getenv('AGENT_TIMEOUT', '300')}")
 print(f"  LOG_LEVEL: {os.getenv('LOG_LEVEL', 'INFO')}")
 print(f"  AGENT_LOG_FILE: {os.getenv('AGENT_LOG_FILE', '(not set)')}")
+print(f"  LOG_CONVERSATIONS: {os.getenv('LOG_CONVERSATIONS', 'false')}")
 
 # Check channel configuration
 print("\nChannels:")

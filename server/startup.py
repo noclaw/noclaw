@@ -39,7 +39,7 @@ class StartupValidator:
         # Run all checks
         checks = [
             ("Python Version", self.check_python_version),
-            ("AgentPool", self.check_agentpool),
+            ("Agent Module", self.check_agent_module),
             ("Claude SDK Auth", self.check_claude_auth),
             ("Database Access", self.check_database),
             ("Disk Space", self.check_disk_space),
@@ -172,13 +172,13 @@ class StartupValidator:
 
         return True, "All dependencies installed"
 
-    def check_agentpool(self) -> Tuple[bool, str]:
-        """Check if agentpool is installed"""
+    def check_agent_module(self) -> Tuple[bool, str]:
+        """Check if agent module is available"""
         try:
-            import agentpool
-            return True, "Installed"
-        except ImportError:
-            return False, "agentpool not installed — see QUICKSTART.md"
+            from server.agent import run_task, Task
+            return True, "Available"
+        except ImportError as e:
+            return False, f"Agent module not available: {e}"
 
 
 def validate_startup() -> bool:

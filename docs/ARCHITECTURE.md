@@ -2,7 +2,7 @@
 
 ## Overview
 
-A minimal personal AI assistant powered by the Claude Agent SDK via [agentpool](https://github.com/noclaw/agentpool). Small enough to understand, useful enough to run daily, flexible enough to customize.
+A personal AI assistant powered by the Claude Code CLI. Tasks arrive via webhooks, Telegram, Slack, or the CLI client. Runs natively on macOS (with full desktop control) or in Docker.
 
 **Design Philosophy:** Goldilocks architecture — not too minimal, not too bloated, just right.
 
@@ -11,14 +11,13 @@ A minimal personal AI assistant powered by the Claude Agent SDK via [agentpool](
 ## System Flow
 
 ```
-HTTP Webhook → FastAPI → Assistant → AgentPool → Claude SDK → Response
-                  ↓           ↓
-             [SQLite]   [Channels]
-              persist    Telegram
-                         Slack
+CLI Client / HTTP / Channel → FastAPI → Agent (CLI subprocess) → Response
+                                 ↓
+                             [SQLite]
+                              persist
 ```
 
-Single Python process. Claude SDK runs on the host via agentpool. Production isolation achieved by running NoClaw in a Docker container.
+Single Python process. CLI agent runs as a subprocess with `--output-format stream-json`. Runs natively on macOS or in Docker.
 
 ---
 
@@ -26,40 +25,60 @@ Single Python process. Claude SDK runs on the host via agentpool. Production iso
 
 ```
 server/
-├── assistant.py          # Main orchestrator (~300 lines)
-├── context_manager.py    # Memory + persistence (~200 lines)
-├── channels/             # Channel plugins (~50 lines infra)
+├── assistant.py          # Main orchestrator
+├── agent/                # Agent execution
+│   ├── __init__.py       # run_task() entry point
+│   ├── cli_session.py    # CLI agent (subprocess + stream-json) — primary
+│   ├── sdk_session.py    # SDK agent — secondary
+│   ├── registry.py       # Active session tracking (in-memory)
+│   ├── session.py        # Task, SessionResult, SessionStatus
+│   └── config.py         # AgentConfig
+├── context_manager.py    # Memory + persistence
+├── channels/             # Channel plugins
 │   ├── base.py           # Channel base class
 │   ├── __init__.py       # Auto-discovery
 │   ├── telegram_bot.py   # Telegram channel
 │   └── slack_bot.py      # Slack channel
-├── heartbeat.py          # Heartbeat scheduler (~100 lines)
-├── simple_scheduler.py   # Minimal scheduler (no cron)
-├── security.py           # SecurityPolicy (~50 lines)
-├── logger.py             # Structured logging (~50 lines)
-├── dashboard.py          # Monitoring dashboard (~50 lines)
+├── heartbeat.py          # Heartbeat task runner
+├── security.py           # Workspace validation
+├── logger.py             # Structured logging
+├── dashboard.py          # Monitoring dashboard
 └── startup.py            # Startup validation
 ```
 
 ### assistant.py — Main Orchestrator
 
-Handles webhooks, builds prompts, runs agents via AgentPool, parses response markers.
+Handles webhooks, builds prompts, runs agents, parses response markers.
 
 Key methods:
-- `process_message()` — single agent: build prompt, run AgentPool, parse REMEMBER/FORGET/SCHEDULE markers
-- `process_parallel()` — multiple agents on independent tasks
+- `process_message()` — single agent: build prompt, run task, parse REMEMBER/FORGET/SCHEDULE markers
+- `process_parallel()` — multiple agents on independent tasks via asyncio.gather
 - `start_channels()` — auto-discover and start configured channel plugins
 - `_build_system_prompt()` — CLAUDE.md + memory.md
 - `_build_prompt()` — user info + conversation history + message + context
 - `_resolve_model()` — map "haiku"/"sonnet"/"opus" to model IDs
 
-### context_manager.py — User State
+### server/agent/ — Agent Execution
 
-SQLite-backed per-user state: contexts, message history, memory.
+Two execution modes:
 
-- Workspace creation with standard structure (files/, conversations/, memory.md, CLAUDE.md)
-- 10-turn conversation history with auto-archival at 50 messages
-- Memory via REMEMBER/FORGET markers parsed from Claude's response
+- **CLI mode (default):** Runs `claude -p --verbose --output-format stream-json --dangerously-skip-permissions` as a subprocess. Provides structured JSON output, cost tracking, and session IDs for multi-turn resume.
+- **SDK mode:** Runs Claude Agent SDK programmatically. Fast, no subprocess overhead.
+
+The `run_task()` function dispatches to the appropriate session type based on `task.execution_mode`.
+
+**Session tracking:** `registry.py` maintains an in-memory dict of active sessions with PID tracking for kill support. Sessions are registered on start and unregistered on completion.
+
+**Multi-turn resume:** CLI sessions capture `session_id` from the stream-json `system/init` event. Passing `--resume <session_id>` on subsequent calls continues the conversation with full context.
+
+### context_manager.py — Channel Tracking & Memory
+
+SQLite-backed channel tracking and shared workspace management.
+
+- Channels table tracks where messages come from (api, telegram, slack, etc.)
+- 10-turn conversation history per channel with auto-archival at 50 messages
+- Shared memory via REMEMBER/FORGET markers parsed from Claude's response
+- Single workspace for all channels — memory and files are shared
 
 ### channels/ — Channel Plugins
 
@@ -77,100 +96,61 @@ Channels call `self.assistant.process_message()` to handle incoming messages. Mi
 
 See [PLUGINS.md](PLUGINS.md) for details.
 
-### agentpool — Agent Execution (External)
-
-[agentpool](https://github.com/noclaw/agentpool) handles Claude SDK orchestration:
-
-- **Parallel mode** — run multiple agents on independent tasks
-- **Team mode** — agents share a task board and coordinate
-- **Pipeline mode** — sequential stages with context handoff
-- **Sandboxing** — local (direct host) or Docker (container isolation)
-- **Logging** — optional JSON lines file for agent performance analysis
-
-NoClaw creates an AgentPool per request:
-
-```python
-async with AgentPool(
-    max_agents=1,
-    workspace=workspace,
-    config=AgentPoolConfig(
-        default_model=model,
-        timeout=self.agent_timeout,
-        log_file=self.agent_log_file,
-    ),
-) as pool:
-    pool.submit(Task(prompt=prompt, system_prompt=system_prompt))
-    results = await pool.run()
-```
-
 ---
 
 ## Data Structure
 
 ```
-.claude/                           # Developer skills (for modifying NoClaw code)
-├── skills/                        # /add-cron
-└── commands/                      # /prime
-
 workspace/                         # Shared agent workspace
-├── .claude/                       # Agent skills (for performing tasks)
-│   ├── skills/                    # direct-integrations, etc.
+├── .claude/                       # Agent configuration
+│   ├── skills/                    # Agent skills (direct-integrations, web-browsing, etc.)
+│   ├── tasks/                     # Scheduled and on-demand task definitions
 │   └── scripts/                   # Python scripts with uv (Gmail, Calendar, etc.)
 ├── CLAUDE.md                      # Agent instructions (regenerated each run)
 ├── memory.md                      # Persistent facts
-├── HEARTBEAT.md                   # Heartbeat checklist (optional)
-├── files/                         # User files
-└── conversations/                 # Archived conversations
+├── files/                         # User files and reports
+└── conversations/                 # Archived conversation logs (when enabled)
 
 data/
 ├── assistant.db                   # SQLite database
 └── agents.jsonl                   # Agent performance log (optional)
 ```
 
-Root `.claude/skills/` are developer skills for modifying the NoClaw codebase (invoked via Claude Code). `workspace/.claude/skills/` are agent skills used during task execution. See [PLUGINS.md](PLUGINS.md) for details.
+`workspace/.claude/skills/` contains agent skills used during task execution. See [PLUGINS.md](PLUGINS.md).
 
 ### Database Schema
 
 ```sql
-CREATE TABLE contexts (
-  user_id TEXT PRIMARY KEY,
-  workspace_path TEXT NOT NULL,
-  claude_md TEXT,
-  heartbeat_enabled BOOLEAN DEFAULT 0,
-  heartbeat_interval INTEGER DEFAULT 1800,
-  last_heartbeat TIMESTAMP,
+CREATE TABLE channels (
+  channel TEXT PRIMARY KEY,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  last_active TIMESTAMP
+  last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE message_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id TEXT NOT NULL,
+  channel TEXT NOT NULL,
   timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   message TEXT NOT NULL,
   response TEXT,
   model_used TEXT,
   tokens_used INTEGER,
-  FOREIGN KEY (user_id) REFERENCES contexts(user_id)
+  FOREIGN KEY (channel) REFERENCES channels(channel)
 );
 
-CREATE TABLE heartbeat_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id TEXT NOT NULL,
-  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  result TEXT,
-  checks_run TEXT,
-  FOREIGN KEY (user_id) REFERENCES contexts(user_id)
-);
 ```
+
+Channel names identify where messages come from: `api`, `api_jeff`, `telegram_12345`, `slack_U042VNB1G`, `heartbeat`, `dashboard`.
+
+Heartbeat task results are stored in `message_history` with `channel = 'heartbeat'`.
 
 ---
 
 ## Design Decisions
 
-### 1. AgentPool per Request
+### 1. CLI as Primary Agent
 
-Each webhook request creates a fresh AgentPool. This keeps things simple — no shared state between requests, no pool lifecycle management. The overhead is negligible compared to SDK session startup.
+The Claude Code CLI supports parallel sub-agents, interactive tool use, and full autonomy via `--dangerously-skip-permissions`. Runs as a subprocess with structured JSON output — no terminal or tmux required. SDK mode is available for simple programmatic tasks.
 
 ### 2. Model Selection
 
@@ -183,33 +163,41 @@ Users control cost/speed tradeoffs:
 
 Model and token usage tracked in message_history.
 
-### 3. Scheduling: Heartbeat vs Cron
+### 3. Scheduling: Task Files
 
-**Heartbeat in core, cron via skill.**
+**Markdown task files instead of cron.**
 
-Heartbeat: every 30 minutes, one agent checks a HEARTBEAT.md checklist. Simple, cost-efficient, context-aware.
+Tasks are markdown files in `workspace/.claude/tasks/` with human-readable schedule expressions (`every morning`, `every 2 hours`, `every heartbeat`). The heartbeat loop runs periodically and executes tasks that are due. Tasks without a schedule are available on-demand via API.
 
-Cron: exact timing via `/add-cron` skill for users who need it.
+No cron syntax, no database tables for scheduling, no separate scheduler — just files.
 
 See [HEARTBEAT.md](HEARTBEAT.md).
 
-### 4. Channels, Developer Skills, and Agent Skills
+### 4. Channels and Agent Skills
 
-**Three extension mechanisms, each with a clear purpose.**
+**Two extension mechanisms, each with a clear purpose.**
 
 - **Channels** (`server/channels/`): communication interfaces — drop a file, set env vars, restart
-- **Developer skills** (`.claude/skills/`): modify NoClaw code — Claude Code reads SKILL.md and makes changes
-- **Agent skills** (`workspace/.claude/skills/`): agent capabilities — scripts the agent uses during task execution
+- **Agent skills** (`workspace/.claude/skills/`): agent capabilities — the agent reads SKILL.md and uses the documented tools during task execution
+
+Users can also modify NoClaw's code directly with Claude Code — the codebase is small and designed to be easy to understand.
 
 See [PLUGINS.md](PLUGINS.md).
 
-### 5. Security Model
+### 5. Platform Skills
 
-**Workspace isolation + container deployment.**
+**Platform-specific skills in `available-skills/`.**
 
-- SecurityPolicy validates workspace paths before use
+Skills that require platform-specific capabilities (e.g., mac-control for screenshots, mouse/keyboard, AppleScript) live in `available-skills/`. During setup, platform-appropriate skills are copied to `workspace/.claude/skills/`. Universal skills (web-browsing, direct-integrations, terminal-control) are always available.
+
+### 6. Security Model
+
+**Workspace validation + deployment isolation.**
+
+- Workspace paths validated before agent execution
 - Single shared workspace at `workspace/`
-- Production isolation by running NoClaw in a Docker container
+- Native macOS: security from dedicated machine on local network
+- Docker: container isolation
 
 See [SECURITY.md](SECURITY.md).
 
@@ -241,10 +229,10 @@ cat data/agents.jsonl | jq 'select(.duration > 30)'
 
 ## Design Principles
 
-1. **KISS** — minimal core, delegate to agentpool
-2. **Security First** — workspace isolation, container deployment for production
+1. **KISS** — minimal core, delegate to Claude CLI
+2. **Security First** — workspace validation, dedicated machine
 3. **Useful Immediately** — channel plugins work with env vars
 4. **Code is Config** — no separate configuration files
-5. **Plugins Over Features** — extend via plugins and skills, not core bloat
+5. **Skills Over Features** — extend via agent skills, not core bloat
 6. **Claude-Native** — let Claude Code customize everything
 7. **Clear Defaults** — works out of the box, customize if needed

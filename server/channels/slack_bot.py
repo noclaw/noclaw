@@ -54,7 +54,7 @@ class SlackBot(Channel):
             return True
         return user_id in self.allowed_users
 
-    def _noclaw_user(self, slack_id: str) -> str:
+    def _channel_name(self, slack_id: str) -> str:
         return f"slack_{slack_id}"
 
     def _register_handlers(self):
@@ -65,10 +65,10 @@ class SlackBot(Channel):
             if event.get("bot_id") or event.get("subtype"):
                 return
 
-            user_id = event.get("user")
+            slack_user_id = event.get("user")
             text = event.get("text", "")
 
-            if not self._authorized(user_id):
+            if not self._authorized(slack_user_id):
                 await say("Unauthorized. Contact bot admin.")
                 return
 
@@ -78,29 +78,29 @@ class SlackBot(Channel):
                 await say(self._help_text())
                 return
             elif lower in ("status", "/status"):
-                await say(self._status_text(user_id))
+                await say(self._status_text(slack_user_id))
                 return
             elif lower in ("memory", "/memory"):
-                await say(self._memory_text(user_id))
+                await say(self._memory_text())
                 return
             elif lower in ("forget", "/forget"):
-                self._do_forget(user_id)
+                self.assistant.context_manager.clear_memory()
                 await say("Memory cleared!")
                 return
 
             # Handle file uploads
             files = event.get("files", [])
             if files:
-                text = await self._handle_file(user_id, files[0], text)
+                text = await self._handle_file(slack_user_id, files[0], text)
 
-            await self._process_and_reply(user_id, text, say)
+            await self._process_and_reply(slack_user_id, text, say)
 
         @self.app.event("app_mention")
         async def handle_mention(event, say):
-            user_id = event.get("user")
+            slack_user_id = event.get("user")
             text = event.get("text", "")
 
-            if not self._authorized(user_id):
+            if not self._authorized(slack_user_id):
                 await say("Unauthorized. Contact bot admin.")
                 return
 
@@ -109,15 +109,15 @@ class SlackBot(Channel):
                 await say("How can I help? Send me a message!")
                 return
 
-            await self._process_and_reply(user_id, text, say, thread_ts=event.get("ts"))
+            await self._process_and_reply(slack_user_id, text, say, thread_ts=event.get("ts"))
 
     async def _process_and_reply(self, slack_user_id, text, say, thread_ts=None):
-        noclaw_user = self._noclaw_user(slack_user_id)
-        logger.info(f"Message from {noclaw_user}: {text[:50]}...")
+        channel = self._channel_name(slack_user_id)
+        logger.info(f"Message from {channel}: {text[:50]}...")
 
         try:
             result = await self.assistant.process_message(
-                user=noclaw_user, message=text, model_hint=self.model_hint,
+                channel=channel, message=text, model_hint=self.model_hint,
             )
             response = result.get("response", "Sorry, I couldn't process that.")
             if len(response) > 3000:
@@ -130,7 +130,7 @@ class SlackBot(Channel):
             await say(f"Error: {str(e)}", thread_ts=thread_ts)
 
     async def _handle_file(self, slack_user_id, file_info, caption):
-        noclaw_user = self._noclaw_user(slack_user_id)
+        channel = self._channel_name(slack_user_id)
         file_name = file_info.get("name", "uploaded_file")
         file_url = file_info.get("url_private_download")
 
@@ -138,8 +138,7 @@ class SlackBot(Channel):
             return caption or "File received but could not be downloaded"
 
         try:
-            user_context = self.assistant.context_manager.get_user_context(noclaw_user)
-            workspace = Path(user_context["workspace_path"])
+            workspace = self.assistant.context_manager.workspace_dir
             files_dir = workspace / "files"
             files_dir.mkdir(exist_ok=True)
 
@@ -148,7 +147,7 @@ class SlackBot(Channel):
                 resp = await client.get(file_url, headers={"Authorization": f"Bearer {self.bot_token}"})
                 (files_dir / file_name).write_bytes(resp.content)
 
-            logger.info(f"Downloaded file from {noclaw_user}: {file_name}")
+            logger.info(f"Downloaded file from {channel}: {file_name}")
             return f"File saved: {file_name}\n\n{caption or 'Please review this file'}"
         except Exception as e:
             logger.error(f"Error downloading file: {e}")
@@ -169,28 +168,21 @@ class SlackBot(Channel):
         )
 
     def _status_text(self, slack_user_id):
-        noclaw_user = self._noclaw_user(slack_user_id)
-        user_context = self.assistant.context_manager.get_user_context(noclaw_user)
-        history = self.assistant.context_manager.get_history(noclaw_user, limit=100)
+        channel = self._channel_name(slack_user_id)
+        history = self.assistant.context_manager.get_history(channel, limit=100)
         return (
             f"*Bot Status:* Online\n\n"
-            f"Messages: {len(history)} in history\n"
-            f"Workspace: {user_context['workspace_path']}\n"
-            f"Last active: {user_context.get('last_active', 'Unknown')}"
+            f"Channel: {channel}\n"
+            f"Messages: {len(history)} in history"
         )
 
-    def _memory_text(self, slack_user_id):
-        noclaw_user = self._noclaw_user(slack_user_id)
-        memory = self.assistant.context_manager.get_memory(noclaw_user)
+    def _memory_text(self):
+        memory = self.assistant.context_manager.get_memory()
         if len(memory.strip()) <= 50:
             return "Memory is empty. I'll remember facts as we chat!"
         if len(memory) > 3000:
             memory = memory[:3000] + "\n\n... (truncated)"
         return f"*Memory:*\n\n{memory}"
-
-    def _do_forget(self, slack_user_id):
-        noclaw_user = self._noclaw_user(slack_user_id)
-        self.assistant.context_manager.clear_memory(noclaw_user)
 
     async def send_message(self, channel_or_user_id, message):
         """Send message to channel or user (for heartbeat notifications)."""

@@ -1,315 +1,131 @@
-# Heartbeat Scheduler
+# Heartbeat Task Runner
 
-The heartbeat scheduler provides simple periodic checks without needing to understand cron syntax.
-
-## Overview
-
-Every 30 minutes (configurable), the heartbeat scheduler:
-1. Reads your HEARTBEAT.md checklist
-2. Checks multiple things in ONE turn (cost-efficient)
-3. Returns `HEARTBEAT_OK` if nothing needs attention
-4. Otherwise, notifies you of important items
-
-## Why Heartbeat vs Cron?
-
-**Heartbeat Advantages:**
-- ✅ Simple to understand (no cron syntax)
-- ✅ Cost-efficient (one AI turn checks everything)
-- ✅ Context-aware (maintains conversation memory)
-- ✅ Smart suppression (silent when nothing important)
-- ✅ Uses Haiku model for low cost
-
-**When to Use Cron Instead:**
-- Need exact times (9:00 AM daily)
-- Isolated execution per task
-- Available via `/add-cron` skill
-
-## Quick Start
-
-### 1. Enable Heartbeat
-
-```bash
-curl -X POST http://localhost:3000/heartbeat/alice/enable \
-  -H "X-API-Key: your_api_key"
-```
-
-Custom interval (in seconds):
-```bash
-curl -X POST "http://localhost:3000/heartbeat/alice/enable?interval=600" \
-  -H "X-API-Key: your_api_key"
-```
-
-### 2. Create HEARTBEAT.md
-
-The system automatically creates a default HEARTBEAT.md in your workspace, but you can customize it:
-
-```markdown
-# Heartbeat Checklist for alice
-
-This checklist is reviewed every heartbeat (default: 30 minutes).
-
-## Checks
-
-- [ ] Any urgent messages or notifications?
-- [ ] Any tasks due soon?
-- [ ] Any errors or issues that need attention?
-
-## Instructions
-
-Only respond if something genuinely needs attention.
-Otherwise, respond with: HEARTBEAT_OK
-
-Keep responses brief and actionable.
-```
-
-### 3. Customize Your Checklist
-
-Example for a developer:
-
-```markdown
-# Heartbeat Checklist
-
-## Development Tasks
-- [ ] Any failed CI/CD builds?
-- [ ] GitHub issues assigned to me?
-- [ ] PRs waiting for review?
-
-## System Health
-- [ ] Disk space below 10GB?
-- [ ] Any error logs in the last hour?
-- [ ] CPU/memory usage high?
-
-## Personal
-- [ ] Calendar events in next 2 hours?
-- [ ] Unread urgent emails?
-
-## Instructions
-Only notify if something needs attention.
-Return HEARTBEAT_OK otherwise.
-```
-
-## API Endpoints
-
-### Enable Heartbeat
-```
-POST /heartbeat/{user}/enable?interval=1800
-```
-
-### Disable Heartbeat
-```
-POST /heartbeat/{user}/disable
-```
-
-### Check Status
-```
-GET /heartbeat/{user}/status
-```
-
-Response:
-```json
-{
-  "user": "alice",
-  "enabled": true,
-  "interval": 1800,
-  "last_heartbeat": "2026-02-06T22:30:00Z"
-}
-```
+The heartbeat runs periodically (default: every 30 minutes) and executes scheduled tasks defined as markdown files in `workspace/.claude/tasks/`.
 
 ## How It Works
 
-### 1. Scheduler Loop
-The heartbeat scheduler runs in the background, checking the database every interval to find users with heartbeat enabled.
+1. Tasks are markdown files in `workspace/.claude/tasks/`
+2. Each task has an optional schedule in YAML frontmatter
+3. The heartbeat loop wakes up every minute, checks which tasks are due, and runs them
+4. Tasks without a schedule are available on-demand via API
 
-### 2. Heartbeat Check
-For each user due for a check:
-1. Read HEARTBEAT.md from workspace
-2. Build prompt with checklist
-3. Execute using Haiku model (fast and cheap)
-4. Log result to database
+## Task Files
 
-### 3. Smart Suppression
-If the response contains "HEARTBEAT_OK", no notification is sent. Only actionable items are surfaced.
-
-### 4. Context Awareness
-Heartbeat checks maintain conversation history, so the AI can reference previous checks and remember context.
-
-## Example Workflow
-
-**9:00 AM - First Check**
 ```
-[HEARTBEAT CHECK]
-Review checklist...
-
-Response: HEARTBEAT_OK
+workspace/.claude/tasks/
+├── system-health.md        # every heartbeat (30 min)
+├── check-email.md          # every 2 hours
+├── morning-briefing.md     # every morning
+└── deploy-report.md        # on-demand (no schedule)
 ```
-*No notification sent*
 
-**9:30 AM - Something Important**
-```
-[HEARTBEAT CHECK]
-Review checklist...
-
-Response: You have a meeting in 15 minutes: "Sprint Planning"
-```
-*Notification sent via configured channel*
-
-**10:00 AM - Back to Normal**
-```
-[HEARTBEAT CHECK]
-Review checklist...
-
-Response: HEARTBEAT_OK
-```
-*No notification sent*
-
-## Cost Optimization
-
-Heartbeat uses the Haiku model by default:
-- **Cost:** ~$0.001 per check (very cheap)
-- **Speed:** ~2 seconds per check
-- **Frequency:** 30 minutes = 48 checks/day = ~$0.05/day
-
-For comparison, checking each item separately with Sonnet:
-- **Cost:** ~$0.01 per check × multiple checks
-- **Speed:** Slower due to multiple API calls
-- **Result:** 10x more expensive
-
-## Advanced Patterns
-
-### Dynamic Checklists
-
-Your HEARTBEAT.md can reference other files:
+### Task Format
 
 ```markdown
-# Heartbeat Checklist
+---
+schedule: every 2 hours
+enabled: true
+---
 
-## System Status
-- [ ] Check /workspace/logs/errors.log for new errors
-- [ ] Review /workspace/status.json for service health
-
-## Tasks
-- [ ] Read /workspace/tasks.txt for TODOs due today
-
-## Instructions
-Use the Read tool to check these files.
-Only notify if something needs attention.
+Check for important unread emails. Summarize anything urgent.
 ```
 
-### Conditional Checks
+The frontmatter is optional. Tasks without frontmatter (or without a `schedule` field) are on-demand only. Set `enabled: false` to pause a scheduled task without deleting it.
 
-```markdown
-# Heartbeat Checklist
+### Schedule Expressions
 
-## Business Hours (9am-5pm)
-- [ ] Check urgent emails
-- [ ] Monitor production alerts
+| Expression | When it runs |
+|---|---|
+| `every heartbeat` | Every tick (default 30 min) |
+| `every 2 hours` | Every N hours |
+| `every morning` | Once per day, first tick after 6am |
+| `every evening` | Once per day, first tick after 5pm |
+| `every weekday` | Monday–Friday mornings |
+| `every monday` | Once per week on that day |
 
-## Off Hours
-- [ ] Only check for critical alerts
-- [ ] Ignore routine notifications
+## API
 
-## Instructions
-Check the current time and adjust accordingly.
-Return HEARTBEAT_OK unless urgent.
-```
+### Enable/Disable Heartbeat
 
-### Integration with Memory
-
-The AI has access to memory.md during heartbeat checks:
-
-```markdown
-# Heartbeat Checklist
-
-## Context-Aware Checks
-- [ ] Check for updates on projects in memory.md
-- [ ] Look for tasks related to remembered goals
-- [ ] Monitor deadlines mentioned in memory
-
-## Instructions
-Use memory.md to understand what matters to the user.
-Focus on their known priorities and projects.
-```
-
-## Troubleshooting
-
-### Heartbeat Not Running
-
-Check status:
 ```bash
-curl http://localhost:3000/heartbeat/alice/status
+# Enable (default 30 min interval)
+curl -X POST http://localhost:3000/heartbeat/enable
+
+# Enable with custom interval (seconds)
+curl -X POST "http://localhost:3000/heartbeat/enable?interval=900"
+
+# Disable
+curl -X POST http://localhost:3000/heartbeat/disable
+
+# Status (includes task list)
+curl http://localhost:3000/heartbeat/status
 ```
 
-Verify in logs:
+### List and Run Tasks
+
 ```bash
-grep "Heartbeat" data/noclaw.log
+# List all tasks
+curl http://localhost:3000/tasks
+
+# Run a task on-demand
+curl -X POST http://localhost:3000/tasks/morning-briefing/run
 ```
 
-### Too Many Notifications
+## Cost
 
-Adjust your HEARTBEAT.md to be more specific:
-- Increase urgency threshold
-- Be more explicit about "important"
-- Add time-based filters
+All heartbeat tasks use the Haiku model by default:
+- ~$0.001 per task execution
+- Default interval (30 min) = 48 ticks/day
+- Most tasks won't run every tick, so daily cost is minimal
 
-### Missing Checks
+## Example Tasks
 
-Verify:
-1. Heartbeat is enabled for user
-2. Interval is reasonable (>60 seconds)
-3. HEARTBEAT.md exists and is readable
-4. Check heartbeat_log table for errors
+### System Health (every heartbeat)
 
-```sql
-sqlite3 data/assistant.db "SELECT * FROM heartbeat_log WHERE user_id='alice' ORDER BY timestamp DESC LIMIT 10"
+```markdown
+---
+schedule: every heartbeat
+enabled: true
+---
+
+Check system health:
+- Is disk space running low?
+- Any error patterns in recent logs?
+- Memory usage unusually high?
+
+If everything looks fine, respond with: HEARTBEAT_OK
+If something needs attention, describe it briefly.
 ```
 
-## Database Schema
+### Morning Briefing (every morning)
 
-```sql
--- Heartbeat configuration (in contexts table)
-ALTER TABLE contexts ADD COLUMN heartbeat_enabled INTEGER DEFAULT 0;
-ALTER TABLE contexts ADD COLUMN heartbeat_interval INTEGER DEFAULT 1800;
-ALTER TABLE contexts ADD COLUMN last_heartbeat TIMESTAMP;
+```markdown
+---
+schedule: every morning
+enabled: true
+---
 
--- Heartbeat log
-CREATE TABLE heartbeat_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT NOT NULL,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    result TEXT,
-    checks_run TEXT
-);
+Good morning! Prepare a brief daily summary:
+1. Check today's calendar for meetings and events
+2. Check email for anything urgent overnight
+3. Check the weather forecast
+
+Keep it concise — bullet points, not paragraphs.
 ```
 
-## Best Practices
+### On-Demand Report (no schedule)
 
-1. **Start Simple**
-   - Use default HEARTBEAT.md
-   - Enable with default 30-min interval
-   - Add checks gradually
+```markdown
+Generate a weekly status report:
+1. Summarize work completed this week
+2. List any blockers or issues
+3. Outline plans for next week
 
-2. **Be Specific**
-   - Define what "urgent" means
-   - Set clear thresholds (< 10GB, > 90% CPU)
-   - Specify time ranges
+Save the report to files/weekly-report.md
+```
 
-3. **Test First**
-   - Manually run checks before enabling
-   - Verify notification delivery
-   - Adjust sensitivity
-
-4. **Monitor Costs**
-   - Check heartbeat_log table
-   - Review API usage
-   - Adjust interval if needed
-
-5. **Keep It Useful**
-   - Remove noisy checks
-   - Focus on actionable items
-   - Trust HEARTBEAT_OK suppression
+This task has no frontmatter, so it only runs when triggered via `POST /tasks/weekly-report/run` or requested through a channel.
 
 ## See Also
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Heartbeat vs Cron decision
-- [LOGGING.md](LOGGING.md) - Monitoring heartbeat activity
-- [/add-cron skill](../.claude/skills/add-cron/) - For exact scheduling needs
+- [ARCHITECTURE.md](ARCHITECTURE.md) — System architecture and design decisions

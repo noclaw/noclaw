@@ -30,8 +30,8 @@ class StructuredFormatter(logging.Formatter):
         }
 
         # Add extra fields if present
-        if hasattr(record, "user_id"):
-            log_data["user_id"] = record.user_id
+        if hasattr(record, "channel"):
+            log_data["channel"] = record.channel
         if hasattr(record, "container_id"):
             log_data["container_id"] = record.container_id
         if hasattr(record, "duration_ms"):
@@ -81,8 +81,8 @@ class HumanFormatter(logging.Formatter):
 
         # Add contextual fields if present
         extras = []
-        if hasattr(record, "user_id"):
-            extras.append(f"user={record.user_id}")
+        if hasattr(record, "channel"):
+            extras.append(f"channel={record.channel}")
         if hasattr(record, "duration_ms"):
             extras.append(f"duration={record.duration_ms}ms")
         if hasattr(record, "error"):
@@ -166,7 +166,7 @@ class LogContext:
 
     Usage:
         logger = get_logger(__name__)
-        with LogContext(user_id="alice"):
+        with LogContext(channel="api"):
             logger.info("Processing request")  # Will include user_id=alice
     """
 
@@ -203,7 +203,7 @@ def log_with_context(logger: logging.Logger, level: str, message: str, **context
 
     Example:
         log_with_context(logger, "info", "Request processed",
-                        user_id="alice", duration_ms=123)
+                        channel="api", duration_ms=123)
     """
     log_func = getattr(logger, level.lower())
 
@@ -239,10 +239,10 @@ if __name__ == "__main__":
 
     # With context
     log_with_context(logger, "info", "Processing request",
-                    user_id="alice", duration_ms=123)
+                    channel="api", duration_ms=123)
 
     # With context manager
-    with LogContext(user_id="bob"):
+    with LogContext(channel="telegram_123"):
         logger.info("User logged in")
         logger.info("User performed action")
 
@@ -252,7 +252,7 @@ if __name__ == "__main__":
     logger = get_logger("test.json")
     logger.info("This is JSON formatted")
     log_with_context(logger, "info", "Request completed",
-                    user_id="charlie", duration_ms=456)
+                    channel="slack_U123", duration_ms=456)
 
     # With exception
     try:

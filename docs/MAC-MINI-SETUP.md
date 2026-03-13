@@ -224,11 +224,21 @@ launchctl unload ~/Library/LaunchAgents/com.noclaw.assistant.plist
 
 On your **dev machine** (laptop), set up the `noclaw` CLI to talk to the Mac Mini.
 
-Copy the client:
+Copy the client to `~/.local/bin` (the standard location for user binaries):
 ```bash
-# From the noclaw repo on the Mac Mini, or download directly
-scp mac-mini.local:~/noclaw/noclaw ~/bin/noclaw
-chmod +x ~/bin/noclaw
+# Create the directory if it doesn't exist
+mkdir -p ~/.local/bin
+
+# Copy from the Mac Mini (adjust hostname to match yours)
+scp noclaw-mac.local:~/noclaw/noclaw ~/.local/bin/noclaw
+chmod +x ~/.local/bin/noclaw
+```
+
+If `~/.local/bin` isn't in your PATH, add it to your shell profile:
+```bash
+# For zsh (~/.zshrc) or bash (~/.bashrc)
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
 ```
 
 Configure it:

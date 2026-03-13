@@ -219,6 +219,13 @@ See [Dockerfile.server](Dockerfile.server) and [docker-compose.yml](docker-compo
 - `claude setup-token` must run in a separate interactive terminal
 - It cannot run inside Claude Code or non-interactive shells
 
+### Database errors ("no such column", "no such table")
+- If upgrading from an older version, the database schema may have changed. Delete and restart:
+  ```bash
+  rm data/assistant.db
+  python run_assistant.py
+  ```
+
 ### Agent timeout or errors
 - Check `AGENT_TIMEOUT` in `.env` (default: 300 seconds)
 - Check logs: `LOG_LEVEL=DEBUG python run_assistant.py`

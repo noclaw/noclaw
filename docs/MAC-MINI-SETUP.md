@@ -287,6 +287,13 @@ noclaw dashboard           # Open web dashboard
 - Ensure `.env` file exists with `CLAUDE_CODE_OAUTH_TOKEN`
 - Test manually first: `cd ~/noclaw && python3 run_assistant.py`
 
+### "no such column: channel" (or other database errors)
+- The database schema has changed since an earlier version. Delete and let it recreate:
+  ```bash
+  rm data/assistant.db
+  # Restart the server
+  ```
+
 ### Agent timeout
 - Increase `AGENT_TIMEOUT` in `.env` (default: 300 seconds)
 - Check Claude token: the agent needs a valid `CLAUDE_CODE_OAUTH_TOKEN`

@@ -215,6 +215,11 @@ See [Dockerfile.server](Dockerfile.server) and [docker-compose.yml](docker-compo
 - Make sure the token is in your `.env` file
 - The server loads `.env` automatically — no need to `source` it
 
+### "Invalid bearer token" (authentication_error 401)
+- The `CLAUDE_CODE_OAUTH_TOKEN` in `.env` is invalid or expired
+- Make sure the token is on a **single line** — long tokens can accidentally wrap when pasting
+- Regenerate with `claude setup-token` in a separate terminal
+
 ### "Raw mode is not supported"
 - `claude setup-token` must run in a separate interactive terminal
 - It cannot run inside Claude Code or non-interactive shells

@@ -12,7 +12,7 @@ for i in {1..10}; do
         break
     fi
     if [ $i -eq 10 ]; then
-        echo "Server failed to start. Please run: python run_assistant.py"
+        echo "Server failed to start. Please run: python3 run_assistant.py"
         exit 1
     fi
     sleep 1
@@ -23,7 +23,7 @@ echo "Testing webhook..."
 curl -X POST http://localhost:3000/webhook \
   -H "Content-Type: application/json" \
   -d '{"user": "test", "message": "Hello! What time is it?"}' \
-  | python -m json.tool
+  | python3 -m json.tool
 
 echo ""
 echo "Webhook test complete!"

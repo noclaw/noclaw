@@ -91,7 +91,7 @@ if curl -s http://localhost:3000/health > /dev/null 2>&1; then
         "Webhook with real Claude responses"
 else
     echo -e "${YELLOW}⚠️  Server not running at http://localhost:3000${NC}"
-    echo "   Skipping integration tests (start with: python run_assistant.py)"
+    echo "   Skipping integration tests (start with: python3 run_assistant.py)"
     echo "   "
 fi
 

@@ -60,6 +60,10 @@ class WebhookRequest(BaseModel):
     tasks: Optional[List[str]] = None  # Multiple prompts to run in parallel
     max_agents: Optional[int] = None  # Max concurrent agents (default: 4)
 
+    model_config = {
+        'protected_namespaces': ()  # Allow field names like model_hint
+    }
+
 
 def _resolve_channel(request) -> str:
     """Resolve channel name from request fields."""

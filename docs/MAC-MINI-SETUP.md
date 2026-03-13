@@ -72,11 +72,12 @@ The agent needs these permissions to control the desktop. Grant them in **System
 
 1. System Settings > Privacy & Security > Accessibility
 2. Add **Terminal.app** (or your terminal emulator)
-3. If running via launchd, also add the Python binary:
+3. If running via launchd, also add the Python binary. Use `realpath` to find the actual binary (not an alias):
    ```bash
-   which python3
-   # e.g. /opt/homebrew/bin/python3.12
+   realpath $(which python3)
+   # e.g. /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13
    ```
+   In the Privacy dialog, use Cmd+Shift+G to type the path directly (aliases and symlinks can't be selected via the file picker).
 
 ### Screen Recording (required for screencapture in agent context)
 
@@ -123,13 +124,26 @@ pass in on en0 proto tcp from 192.168.0.0/16 to any port 3000
 block in on en0 proto tcp from any to any port 3000
 ```
 
-### Set a Static IP or Hostname
+### Local Hostname
 
-Give the Mac Mini a stable address:
+Check your Mac's local hostname in System Settings > General > Sharing (bottom of the page). It may not be `mac-mini.local` — for example, a Mac Studio defaults to `Mac-Studio.local`. Note this hostname or change it to something memorable:
+
+```bash
+# Check current hostname
+scutil --get LocalHostName
+
+# Change it (optional)
+sudo scutil --set LocalHostName noclaw-mac
+# Now reachable as noclaw-mac.local
+```
+
+This is the address you'll use from your dev machine for SSH, the CLI client, and curl.
+
+### Set a Static IP (Optional)
+
+For extra reliability, give the Mac a stable IP:
 - Router: assign a static DHCP lease
 - Or set manually in System Settings > Network > Wi-Fi/Ethernet > Details > TCP/IP
-
-The default mDNS hostname (`mac-mini.local`) works on local networks.
 
 ## Step 5: Energy Settings
 

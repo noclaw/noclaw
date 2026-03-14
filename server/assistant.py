@@ -582,6 +582,16 @@ async def dashboard_stream():
     )
 
 
+@app.post("/dashboard/test")
+async def dashboard_test(request: Request, background_tasks: BackgroundTasks):
+    """Send a test message from the dashboard (no API key required)"""
+    body = await request.json()
+    message = body.get("message", "Hello!")
+    channel = "dashboard"
+    result = await assistant.process_message(message, channel=channel)
+    return result
+
+
 async def send_callback(url: str, data: Dict):
     """Send async callback to URL"""
     # TODO: Implement with aiohttp

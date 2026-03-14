@@ -409,10 +409,10 @@ class Dashboard:
             resultDiv.textContent = 'Sending...';
             resultDiv.classList.add('show');
             try {
-                const response = await fetch('/webhook', {
+                const response = await fetch('/dashboard/test', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message, channel: 'dashboard'})
+                    body: JSON.stringify({message})
                 });
                 const data = await response.json();
                 resultDiv.textContent = 'Response: ' + data.response;

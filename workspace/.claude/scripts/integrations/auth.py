@@ -12,6 +12,7 @@ Setup:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -97,6 +98,9 @@ def run_initial_auth(headless: bool = False) -> Any:
         # 2. User opens in local browser, authorizes
         # 3. Google redirects to localhost (which fails — that's fine)
         # 4. User copies the full redirect URL and pastes it back
+        #
+        # Allow http://localhost redirect (oauthlib requires HTTPS by default)
+        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
         flow.redirect_uri = "http://localhost:1"  # Use port 1 (won't actually listen)
         auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
 

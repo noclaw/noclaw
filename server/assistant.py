@@ -588,7 +588,7 @@ async def dashboard_test(request: Request, background_tasks: BackgroundTasks):
     body = await request.json()
     message = body.get("message", "Hello!")
     channel = "dashboard"
-    result = await assistant.process_message(message, channel=channel)
+    result = await assistant.process_message(channel=channel, message=message)
     return result
 
 

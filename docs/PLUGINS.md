@@ -161,7 +161,7 @@ response = result.get("response", "Error processing message")
 
 ### Channel naming convention
 
-Each channel creates a unique channel name: `telegram_12345`, `slack_U042VNB1G`. The API defaults to `api` or `api_{user}` if a user is specified. This gives each source its own conversation history while sharing a single workspace and memory.
+Each channel creates a unique channel name: `telegram_12345`, `slack_U042VNB1G`. The API defaults to `api` or `api_{user}` if a user is specified. This gives each source its own conversation history while sharing a single workspace.
 
 ## Extension Points Summary
 

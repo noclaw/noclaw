@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test memory system and channel tracking
+Test channel tracking and conversation history
 """
 
 import os
@@ -24,8 +24,6 @@ def test_channel_creation():
         workspace_dir.mkdir()
         (workspace_dir / "files").mkdir()
         (workspace_dir / "conversations").mkdir()
-        memory_file = workspace_dir / "memory.md"
-        memory_file.write_text("# Memory\n\n")
 
         cm = ContextManager(db_path, workspace_dir)
 
@@ -33,35 +31,7 @@ def test_channel_creation():
         cm.ensure_channel("api")
         cm.ensure_channel("telegram_12345")
 
-        assert memory_file.exists(), "memory.md should exist"
-        assert "# Memory" in memory_file.read_text()
         print("✓ Channels created, shared workspace intact")
-
-
-def test_append_memory():
-    """Test appending facts to memory"""
-    print("\n=== Testing Append Memory ===\n")
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test.db"
-        workspace_dir = Path(tmpdir) / "workspace"
-        workspace_dir.mkdir()
-        (workspace_dir / "memory.md").write_text("# Memory\n\n")
-        cm = ContextManager(db_path, workspace_dir)
-
-        # Append some facts
-        cm.append_memory("Prefers Python over JavaScript")
-        cm.append_memory("Works on project named 'Skynet'")
-        cm.append_memory("Prefers Python over JavaScript")  # Duplicate
-
-        # Read memory
-        memory = cm.get_memory()
-
-        assert "Prefers Python" in memory
-        assert "Skynet" in memory
-        assert memory.count("Prefers Python") == 1, "Should not duplicate facts"
-        print("✓ Memory appended correctly")
-        print(f"Memory content:\n{memory}")
 
 
 def test_workspace_structure():
@@ -74,18 +44,15 @@ def test_workspace_structure():
         workspace_dir.mkdir()
         (workspace_dir / "files").mkdir()
         (workspace_dir / "conversations").mkdir()
-        (workspace_dir / "memory.md").write_text("# Memory\n\n")
 
         cm = ContextManager(db_path, workspace_dir)
 
         assert (workspace_dir / "files").exists(), "files/ directory should exist"
         assert (workspace_dir / "conversations").exists(), "conversations/ directory should exist"
-        assert (workspace_dir / "memory.md").exists(), "memory.md should exist"
 
         print("✓ Shared workspace structure correct:")
         print(f"  - {workspace_dir / 'files'}")
         print(f"  - {workspace_dir / 'conversations'}")
-        print(f"  - {workspace_dir / 'memory.md'}")
 
 
 def test_history_archival():
@@ -98,7 +65,6 @@ def test_history_archival():
         workspace_dir.mkdir()
         (workspace_dir / "files").mkdir()
         (workspace_dir / "conversations").mkdir()
-        (workspace_dir / "memory.md").write_text("# Memory\n\n")
 
         cm = ContextManager(db_path, workspace_dir)
 
@@ -143,7 +109,6 @@ def test_get_history():
         db_path = Path(tmpdir) / "test.db"
         workspace_dir = Path(tmpdir) / "workspace"
         workspace_dir.mkdir()
-        (workspace_dir / "memory.md").write_text("# Memory\n\n")
 
         cm = ContextManager(db_path, workspace_dir)
 
@@ -177,48 +142,18 @@ def test_get_history():
         print("✓ Channels have separate history")
 
 
-def test_clear_memory():
-    """Test clearing memory"""
-    print("\n=== Testing Clear Memory ===\n")
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test.db"
-        workspace_dir = Path(tmpdir) / "workspace"
-        workspace_dir.mkdir()
-        (workspace_dir / "memory.md").write_text("# Memory\n\n")
-
-        cm = ContextManager(db_path, workspace_dir)
-
-        # Add memory
-        cm.append_memory("Important fact 1")
-        cm.append_memory("Important fact 2")
-
-        memory_before = cm.get_memory()
-        assert "Important fact 1" in memory_before
-
-        # Clear memory
-        cm.clear_memory()
-
-        memory_after = cm.get_memory()
-        assert "Important fact 1" not in memory_after
-        assert "# Memory" in memory_after
-        print("✓ Memory cleared successfully")
-
-
 if __name__ == "__main__":
-    print("Running Memory & Channel Tests")
+    print("Running Channel & History Tests")
     print("=" * 60)
 
     try:
         test_channel_creation()
-        test_append_memory()
         test_workspace_structure()
         test_history_archival()
         test_get_history()
-        test_clear_memory()
 
         print("\n" + "=" * 60)
-        print("All memory tests passed!")
+        print("All tests passed!")
         print("=" * 60)
 
     except AssertionError as e:

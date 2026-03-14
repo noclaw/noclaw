@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Context Manager - Handles channel tracking, message history, memory, and persistence.
+Context Manager - Handles channel tracking, message history, and persistence.
 
 Single-user system. The `channel` field identifies where messages come from
 (e.g., "api", "telegram_12345", "slack_U042VNB1G") — not different users.
@@ -11,12 +11,12 @@ import json
 import logging
 import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
-# Memory and history configuration
+# History configuration
 MAX_RECENT_HISTORY = 10
 ARCHIVE_THRESHOLD = 50  # Archive history when it exceeds this
 
@@ -131,54 +131,6 @@ class ContextManager:
                 for row in rows
             ]
 
-    def get_memory(self) -> str:
-        """Get persistent memory (shared across all channels)"""
-        memory_file = self.workspace_dir / "memory.md"
-        if memory_file.exists():
-            return memory_file.read_text()
-        else:
-            return "# Memory\n\n"
-
-    def append_memory(self, fact: str):
-        """Append a fact to memory"""
-        memory_file = self.workspace_dir / "memory.md"
-
-        if not memory_file.exists():
-            memory_file.write_text("# Memory\n\n")
-
-        timestamp = datetime.datetime.now(datetime.UTC)
-        current_content = memory_file.read_text()
-
-        if fact.lower() not in current_content.lower():
-            memory_file.write_text(
-                current_content + f"- [{timestamp}] {fact}\n"
-            )
-            logger.info(f"Added memory: {fact[:50]}...")
-        else:
-            logger.debug(f"Skipped duplicate memory")
-
-    def remove_memory(self, search: str):
-        """Remove memory lines matching search string (case-insensitive)"""
-        memory_file = self.workspace_dir / "memory.md"
-
-        if not memory_file.exists():
-            return
-
-        lines = memory_file.read_text().splitlines()
-        search_lower = search.lower()
-        kept = [line for line in lines if search_lower not in line.lower()]
-
-        if len(kept) < len(lines):
-            memory_file.write_text("\n".join(kept) + "\n")
-            removed = len(lines) - len(kept)
-            logger.info(f"Removed {removed} memory line(s) matching: {search[:50]}")
-
-    def clear_memory(self):
-        """Clear all memory"""
-        memory_file = self.workspace_dir / "memory.md"
-        memory_file.write_text("# Memory\n\n")
-        logger.info("Cleared memory")
-
     def _archive_old_history(self, channel: str, keep_recent: int = MAX_RECENT_HISTORY):
         """
         Archive old conversation history to a file and remove from database.
@@ -267,46 +219,12 @@ You are a personal AI assistant.
 ## Guidelines
 - Be helpful and concise
 - Focus on practical solutions
-- Remember context between conversations
-- Suggest task scheduling when appropriate
-
-## Memory System
-You have a persistent memory managed through special markers in your response.
-Do NOT use file tools to write to memory.md — the system handles it automatically.
-
-To save a fact, include this exact format on its own line:
-REMEMBER: <fact>
-
-To correct a fact, FORGET the old one then REMEMBER the new one:
-FORGET: <search text that matches the old fact>
-REMEMBER: <corrected fact>
-
-Example — saving:
-REMEMBER: User's name is Alice
-
-Example — correcting:
-FORGET: name is Alice
-REMEMBER: User's name is Bob
-
-Rules:
-- You MUST include the REMEMBER:/FORGET: lines in your response for memory to be saved
-- Simply saying "I'll remember that" does NOT save anything — the marker is required
-- One fact per REMEMBER: line
-- Don't duplicate facts already in your Remembered Facts section
 - Conversation history (last {MAX_RECENT_HISTORY} exchanges) is provided automatically
-
-## What to Remember
-Use REMEMBER: when you learn:
-- User preferences and habits
-- Project names and details
-- Important dates or deadlines
-- Recurring needs or requests
-- Names of people, teams, or systems
+- Suggest task scheduling when appropriate
 
 ## User Workspace
 Your workspace is mounted at /workspace with:
 - `CLAUDE.md` - Your instructions (this file)
-- `memory.md` - Persistent facts
 - `files/` - User's files
 - `conversations/` - Archived conversation history
 

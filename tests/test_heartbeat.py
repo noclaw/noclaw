@@ -34,7 +34,6 @@ def _setup_workspace(tmpdir):
     workspace_dir.mkdir()
     (workspace_dir / "files").mkdir()
     (workspace_dir / "conversations").mkdir()
-    (workspace_dir / "memory.md").write_text("# Memory\n\n")
     tasks_dir = workspace_dir / ".claude" / "tasks"
     tasks_dir.mkdir(parents=True)
     return workspace_dir, tasks_dir

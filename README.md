@@ -31,7 +31,7 @@ The interactive setup handles dependencies, `.env` configuration, and optional T
 - **Shared Workspace** — Agent workspace with skills, memory, and files
 - **Model Selection** — Choose Haiku/Sonnet/Opus per request
 - **Heartbeat Task Runner** — Scheduled and on-demand tasks as markdown files
-- **Enhanced Memory** — 10-turn history with auto-archival after 50 messages
+- **Conversation History** — 10-turn history with auto-archival after 50 messages
 - **Monitoring Dashboard** — Real-time dashboard with Server-Sent Events
 - **Channel Plugins** — Telegram and Slack auto-start when env vars are set
 - **Agent Skills** — Gmail, Calendar, Google Docs/Sheets/Drive, web browsing, mac control
@@ -110,7 +110,6 @@ The codebase is small enough that Claude can safely modify it.
 │   ├── .claude/skills/       # Agent skills (active)
 │   ├── .claude/tasks/        # Scheduled and on-demand tasks
 │   ├── CLAUDE.md             # Agent instructions
-│   ├── memory.md             # Persistent facts
 │   └── files/                # User files and reports
 ├── available-skills/         # Platform-specific skills (copied during setup)
 ├── tests/                    # Test suite

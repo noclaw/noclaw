@@ -33,7 +33,7 @@ server/
 │   ├── registry.py       # Active session tracking (in-memory)
 │   ├── session.py        # Task, SessionResult, SessionStatus
 │   └── config.py         # AgentConfig
-├── context_manager.py    # Memory + persistence
+├── context_manager.py    # Channel tracking + persistence
 ├── channels/             # Channel plugins
 │   ├── base.py           # Channel base class
 │   ├── __init__.py       # Auto-discovery
@@ -51,10 +51,10 @@ server/
 Handles webhooks, builds prompts, runs agents, parses response markers.
 
 Key methods:
-- `process_message()` — single agent: build prompt, run task, parse REMEMBER/FORGET/SCHEDULE markers
+- `process_message()` — single agent: build prompt, run task, return response
 - `process_parallel()` — multiple agents on independent tasks via asyncio.gather
 - `start_channels()` — auto-discover and start configured channel plugins
-- `_build_system_prompt()` — CLAUDE.md + memory.md
+- `_build_system_prompt()` — CLAUDE.md content
 - `_build_prompt()` — user info + conversation history + message + context
 - `_resolve_model()` — map "haiku"/"sonnet"/"opus" to model IDs
 
@@ -71,14 +71,13 @@ The `run_task()` function dispatches to the appropriate session type based on `t
 
 **Multi-turn resume:** CLI sessions capture `session_id` from the stream-json `system/init` event. Passing `--resume <session_id>` on subsequent calls continues the conversation with full context.
 
-### context_manager.py — Channel Tracking & Memory
+### context_manager.py — Channel Tracking & Persistence
 
 SQLite-backed channel tracking and shared workspace management.
 
 - Channels table tracks where messages come from (api, telegram, slack, etc.)
 - 10-turn conversation history per channel with auto-archival at 50 messages
-- Shared memory via REMEMBER/FORGET markers parsed from Claude's response
-- Single workspace for all channels — memory and files are shared
+- Single workspace for all channels — files are shared
 
 ### channels/ — Channel Plugins
 
@@ -107,7 +106,6 @@ workspace/                         # Shared agent workspace
 │   ├── tasks/                     # Scheduled and on-demand task definitions
 │   └── scripts/                   # Python scripts with uv (Gmail, Calendar, etc.)
 ├── CLAUDE.md                      # Agent instructions (regenerated each run)
-├── memory.md                      # Persistent facts
 ├── files/                         # User files and reports
 └── conversations/                 # Archived conversation logs (when enabled)
 

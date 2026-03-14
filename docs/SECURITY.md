@@ -20,7 +20,6 @@ workspace/                     # Shared agent workspace
 ├── .claude/                   # Agent-specific Claude config
 │   └── skills/                # Skills available to the agent
 ├── CLAUDE.md                  # Agent instructions (regenerated each run)
-├── memory.md                  # Persistent facts
 ├── HEARTBEAT.md               # Heartbeat checklist (optional)
 ├── files/                     # User files
 └── conversations/             # Archived conversations

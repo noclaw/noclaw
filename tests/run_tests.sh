@@ -52,9 +52,9 @@ run_test "Security Policy" \
     "python3 tests/test_security.py" \
     "Workspace security validation"
 
-run_test "Enhanced Memory" \
-    "python3 tests/test_memory.py" \
-    "Memory.md and conversation archival"
+run_test "Channel Tracking & History" \
+    "python3 tests/test_history.py" \
+    "Channel tracking and conversation archival"
 
 run_test "Heartbeat Task Runner" \
     "python3 tests/test_heartbeat.py" \

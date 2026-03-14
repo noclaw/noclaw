@@ -39,7 +39,7 @@ See [docs/NOCLAW-MAC-PLAN.md](docs/NOCLAW-MAC-PLAN.md) for the full plan.
   - `registry.py` — Active session tracking (in-memory)
   - `session.py` — Task, SessionResult, SessionStatus
   - `config.py` — AgentConfig
-- **[server/context_manager.py](server/context_manager.py)** — Channel tracking, message history, memory, SQLite persistence
+- **[server/context_manager.py](server/context_manager.py)** — Channel tracking, message history, SQLite persistence
 - **[server/channels/](server/channels/)** — Channel plugins (Telegram, Slack) with auto-discovery
 - **[server/heartbeat.py](server/heartbeat.py)** — Heartbeat task runner (reads workspace/.claude/tasks/)
 - **[server/security.py](server/security.py)** — Workspace validation (SecurityPolicy + validate_workspace)
@@ -53,7 +53,6 @@ workspace/                        # Shared agent workspace
 │   ├── tasks/                    # Scheduled and on-demand task definitions
 │   └── scripts/                  # Python scripts (Gmail, Calendar, etc.)
 ├── CLAUDE.md                     # Agent instructions (regenerated each run)
-├── memory.md                     # Persistent facts
 ├── files/                        # User files and reports
 └── conversations/                # Archived conversation logs (when LOG_CONVERSATIONS=true)
 

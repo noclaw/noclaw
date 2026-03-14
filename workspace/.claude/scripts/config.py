@@ -27,7 +27,6 @@ load_dotenv(NOCLAW_ROOT / ".env")
 load_dotenv(SCRIPTS_DIR / ".env", override=True)
 
 # Workspace file paths
-MEMORY_FILE = PROJECT_ROOT / "memory.md"
 CLAUDE_FILE = PROJECT_ROOT / "CLAUDE.md"
 
 # === Owner Identity ===

@@ -87,10 +87,6 @@ class PersonalAssistant:
         (WORKSPACE_DIR / "conversations").mkdir(exist_ok=True)
         (WORKSPACE_DIR / ".claude").mkdir(exist_ok=True)
         (WORKSPACE_DIR / ".claude" / "skills").mkdir(exist_ok=True)
-        memory_file = WORKSPACE_DIR / "memory.md"
-        if not memory_file.exists():
-            memory_file.write_text("# Memory\n\n")
-
         # Core components
         self.db_path = self.data_dir / "assistant.db"
         self.context_manager = ContextManager(self.db_path, WORKSPACE_DIR)
@@ -131,16 +127,8 @@ class PersonalAssistant:
         return os.getenv("DEFAULT_MODEL", "claude-sonnet-4-5")
 
     def _build_system_prompt(self) -> str:
-        """Build system prompt from CLAUDE.md content and memory.md."""
-        parts = []
-        if self.claude_md:
-            parts.append(self.claude_md)
-
-        memory_content = self.context_manager.get_memory().strip()
-        if memory_content:
-            parts.append(f"\n## Remembered Facts\n{memory_content}")
-
-        return "\n".join(parts)
+        """Build system prompt from CLAUDE.md content."""
+        return self.claude_md or ""
 
     @staticmethod
     def _build_prompt(message: str, channel: str, history: list, extra_context: dict) -> str:
@@ -166,26 +154,6 @@ class PersonalAssistant:
 
         return "\n".join(parts)
 
-    @staticmethod
-    def _extract_memory_commands(response_text: str):
-        """Parse REMEMBER:/FORGET: markers from response, return (clean_text, remembers, forgets)."""
-        clean_lines = []
-        remembers = []
-        forgets = []
-        for line in response_text.split("\n"):
-            stripped = line.strip()
-            if stripped.startswith("FORGET:"):
-                search = stripped[len("FORGET:"):].strip()
-                if search:
-                    forgets.append(search)
-            elif stripped.startswith("REMEMBER:"):
-                fact = stripped[len("REMEMBER:"):].strip()
-                if fact:
-                    remembers.append(fact)
-            else:
-                clean_lines.append(line)
-        return "\n".join(clean_lines).strip(), remembers, forgets
-
     async def process_message(self, channel: str, message: str,
                               extra_context: Dict = None,
                               model_hint: Optional[str] = None,
@@ -204,7 +172,7 @@ class PersonalAssistant:
         # Write CLAUDE.md to workspace (SDK reads it as project context)
         (workspace / "CLAUDE.md").write_text(self.claude_md)
 
-        # Build system prompt (CLAUDE.md + memory) and enhanced prompt (history + context)
+        # Build system prompt and enhanced prompt (history + context)
         system_prompt = self._build_system_prompt()
         prompt = self._build_prompt(message, channel, history, extra_context or {})
         model = self._resolve_model(model_hint)
@@ -225,18 +193,8 @@ class PersonalAssistant:
             if session_result.status in (SessionStatus.ERROR, SessionStatus.TIMEOUT):
                 raise RuntimeError(session_result.error or f"Agent {session_result.status.value}")
 
-            # Parse response markers
-            clean_response, remembers, forgets = self._extract_memory_commands(session_result.response)
-
-            for search in forgets:
-                self.context_manager.remove_memory(search)
-                logger.info(f"Forgot memory matching: {search[:50]}...")
-            for fact in remembers:
-                self.context_manager.append_memory(fact)
-                logger.info(f"Saved memory: {fact[:50]}...")
-
             result = {
-                "response": clean_response,
+                "response": session_result.response,
                 "model_used": session_result.model_used,
                 "tokens_used": session_result.tokens_used,
                 "session_id": session_result.session_id,
@@ -246,7 +204,7 @@ class PersonalAssistant:
             self.context_manager.add_message(
                 channel=channel,
                 message=message,
-                response=clean_response,
+                response=session_result.response,
                 model_used=session_result.model_used,
                 tokens_used=session_result.tokens_used,
             )

@@ -80,14 +80,6 @@ class SlackBot(Channel):
             elif lower in ("status", "/status"):
                 await say(self._status_text(slack_user_id))
                 return
-            elif lower in ("memory", "/memory"):
-                await say(self._memory_text())
-                return
-            elif lower in ("forget", "/forget"):
-                self.assistant.context_manager.clear_memory()
-                await say("Memory cleared!")
-                return
-
             # Handle file uploads
             files = event.get("files", [])
             if files:
@@ -158,9 +150,7 @@ class SlackBot(Channel):
             "*NoClaw AI Assistant*\n\n"
             "*Commands* (type in DM or after @mention):\n"
             "- `help` - Show this message\n"
-            "- `status` - Check bot status\n"
-            "- `memory` - View remembered facts\n"
-            "- `forget` - Clear memory\n\n"
+            "- `status` - Check bot status\n\n"
             "*Usage:*\n"
             "- DM me directly with any message\n"
             "- @mention me in a channel\n"
@@ -175,14 +165,6 @@ class SlackBot(Channel):
             f"Channel: {channel}\n"
             f"Messages: {len(history)} in history"
         )
-
-    def _memory_text(self):
-        memory = self.assistant.context_manager.get_memory()
-        if len(memory.strip()) <= 50:
-            return "Memory is empty. I'll remember facts as we chat!"
-        if len(memory) > 3000:
-            memory = memory[:3000] + "\n\n... (truncated)"
-        return f"*Memory:*\n\n{memory}"
 
     async def send_message(self, channel_or_user_id, message):
         """Send message to channel or user (for heartbeat notifications)."""

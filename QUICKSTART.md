@@ -238,7 +238,7 @@ See [Dockerfile.server](Dockerfile.server) and [docker-compose.yml](docker-compo
 
 ## Next Steps
 
-- **Customize workspace** — agent instructions in `workspace/CLAUDE.md`, persistent facts in `workspace/memory.md`
+- **Customize workspace** — agent instructions in `workspace/CLAUDE.md`
 - **Setup integrations** — Gmail, Calendar, etc. via `python3 setup.py`
 - **Monitor** — visit `http://localhost:3000/dashboard`
 - **Secure** — set `NOCLAW_API_KEY` in `.env` for webhook authentication

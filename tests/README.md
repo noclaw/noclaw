@@ -31,11 +31,10 @@ Tests the SecurityPolicy class for workspace validation.
 - Blocked patterns (.ssh, .aws, .env) rejected
 - Clear error messages
 
-#### [test_memory.py](test_memory.py) - Enhanced Memory System
-Tests memory features: memory.md, conversation history, archival.
+#### [test_history.py](test_history.py) - Channel Tracking & History
+Tests channel tracking, conversation history, and archival.
 
-- memory.md created for new channels
-- Appending and deduplicating facts
+- Channel creation and tracking
 - 10-turn conversation history
 - Auto-archival after 50 messages
 

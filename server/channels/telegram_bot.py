@@ -41,8 +41,6 @@ class TelegramBot(Channel):
         self.application.add_handler(CommandHandler("start", self._cmd_start))
         self.application.add_handler(CommandHandler("help", self._cmd_help))
         self.application.add_handler(CommandHandler("status", self._cmd_status))
-        self.application.add_handler(CommandHandler("memory", self._cmd_memory))
-        self.application.add_handler(CommandHandler("forget", self._cmd_forget))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         self.application.add_handler(MessageHandler(filters.VOICE, self._handle_voice))
         self.application.add_handler(MessageHandler(filters.Document.ALL, self._handle_document))
@@ -73,7 +71,7 @@ class TelegramBot(Channel):
             return
         await update.message.reply_text(
             "Welcome to your NoClaw AI Assistant!\n\n"
-            "Commands: /help /status /memory /forget\n\n"
+            "Commands: /help /status\n\n"
             "Just send me a message and I'll respond."
         )
 
@@ -86,9 +84,7 @@ class TelegramBot(Channel):
             "Commands:\n"
             "/start - Start the bot\n"
             "/help - Show this message\n"
-            "/status - Check bot status\n"
-            "/memory - View remembered facts\n"
-            "/forget - Clear memory\n\n"
+            "/status - Check bot status\n\n"
             "Send any text message to chat."
         )
 
@@ -103,25 +99,6 @@ class TelegramBot(Channel):
             f"Channel: {channel}\n"
             f"Messages: {len(history)} in history"
         )
-
-    async def _cmd_memory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not self._authorized(update.effective_user.id):
-            await update.message.reply_text("Unauthorized.")
-            return
-        memory = self.assistant.context_manager.get_memory()
-        if len(memory.strip()) <= 50:
-            await update.message.reply_text("Memory is empty. I'll remember facts as we chat!")
-        else:
-            if len(memory) > 4000:
-                memory = memory[:4000] + "\n\n... (truncated)"
-            await update.message.reply_text(f"Memory:\n\n{memory}")
-
-    async def _cmd_forget(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not self._authorized(update.effective_user.id):
-            await update.message.reply_text("Unauthorized.")
-            return
-        self.assistant.context_manager.clear_memory()
-        await update.message.reply_text("Memory cleared!")
 
     async def _handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._authorized(update.effective_user.id):

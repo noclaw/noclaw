@@ -133,10 +133,10 @@ Run `python3 setup.py` for guided channel setup. See [docs/PLUGINS.md](docs/PLUG
 - Run `python3 setup.py` to detect platform and install mac-control skill
 - See [docs/MAC-MINI-SETUP.md](docs/MAC-MINI-SETUP.md) for the complete setup guide (permissions, auto-start, networking)
 
-### Docker
-- For headless server deployment
+### Docker (Digital Ocean / VPS)
+- For headless server deployment with Nginx, SSL, and firewall
 - `docker compose up -d`
-- See [Dockerfile.server](Dockerfile.server) and [docker-compose.yml](docker-compose.yml)
+- See [docs/DIGITAL-OCEAN-SETUP.md](docs/DIGITAL-OCEAN-SETUP.md) for the complete deployment guide
 
 ## Requirements
 

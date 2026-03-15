@@ -210,6 +210,21 @@ class ContextManager:
 
         return archives
 
+    def list_channels(self) -> List[Dict]:
+        """List all channels with message counts, ordered by last active."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT c.channel, c.created_at, c.last_active,
+                       COUNT(m.id) as message_count
+                FROM channels c
+                LEFT JOIN message_history m ON c.channel = m.channel
+                GROUP BY c.channel
+                ORDER BY c.last_active DESC
+            """)
+            return [dict(row) for row in cursor.fetchall()]
+
     def get_default_claude_md(self) -> str:
         """Get default CLAUDE.md content"""
         return f"""# Personal Assistant

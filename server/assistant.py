@@ -3,10 +3,13 @@
 Personal Assistant Core - Minimal, security-first AI assistant
 """
 
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Depends, Header, Body
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Depends, Header, Body, Cookie
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import sqlite3
+import hmac
+import hashlib
 import json
 import logging
 from datetime import datetime
@@ -19,7 +22,7 @@ load_dotenv()
 
 from .agent import run_task, Task, SessionResult, SessionStatus, AgentConfig
 from .context_manager import ContextManager
-from .heartbeat import HeartbeatScheduler
+from .heartbeat import HeartbeatScheduler, parse_frontmatter
 from .dashboard import Dashboard, stream_events
 
 # Project root (parent of server/) and shared workspace
@@ -44,6 +47,29 @@ def verify_api_key(x_api_key: str = Header(None), authorization: str = Header(No
     if authorization and authorization.startswith("Bearer ") and authorization[7:] == expected:
         return
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+# Dashboard cookie auth
+DASHBOARD_COOKIE_NAME = "noclaw_session"
+DASHBOARD_HMAC_KEY = b"noclaw-dashboard-auth"
+
+
+def _make_session_token(password: str) -> str:
+    """Create HMAC token from password for cookie value."""
+    return hmac.new(DASHBOARD_HMAC_KEY, password.encode(), hashlib.sha256).hexdigest()
+
+
+def _verify_dashboard_cookie(request: Request) -> bool:
+    """Check if request has a valid dashboard session cookie.
+    Returns True if auth passes (no password set, or valid cookie).
+    """
+    password = os.getenv("NOCLAW_PASSWORD")
+    if not password:
+        return True  # dev mode
+    cookie = request.cookies.get(DASHBOARD_COOKIE_NAME)
+    if not cookie:
+        return False
+    return hmac.compare_digest(cookie, _make_session_token(password))
 
 
 class WebhookRequest(BaseModel):
@@ -338,6 +364,10 @@ async def health():
     # Check database connection
     try:
         assistant.context_manager.ensure_channel("_health_check")
+        # Clean up so it doesn't appear as a real channel
+        with sqlite3.connect(assistant.db_path) as conn:
+            conn.execute("DELETE FROM channels WHERE channel = '_health_check'")
+            conn.commit()
         health_status["checks"]["database"] = "ok"
     except Exception as e:
         health_status["checks"]["database"] = f"error: {str(e)}"
@@ -456,11 +486,106 @@ async def run_task_endpoint(task_name: str):
     }
 
 
+@app.get("/tasks/{task_name}", dependencies=[Depends(verify_api_key)])
+async def get_task_detail(task_name: str):
+    """Get full detail for a single task."""
+    task = assistant.heartbeat.get_task(task_name)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task '{task_name}' not found")
+
+    last_run = assistant.heartbeat._last_runs.get(task_name)
+    return {
+        "name": task.name,
+        "enabled": task.enabled,
+        "schedule": task.schedule_str or "on-demand",
+        "last_run": datetime.fromtimestamp(last_run).isoformat() if last_run else None,
+    }
+
+
+@app.patch("/tasks/{task_name}", dependencies=[Depends(verify_api_key)])
+async def update_task(task_name: str, request: Request):
+    """Update task frontmatter (enabled, schedule)."""
+    task_path = WORKSPACE_DIR / ".claude" / "tasks" / f"{task_name}.md"
+    if not task_path.exists():
+        raise HTTPException(status_code=404, detail=f"Task '{task_name}' not found")
+
+    body = await request.json()
+    content = task_path.read_text()
+    metadata, prompt_body = parse_frontmatter(content)
+
+    if "enabled" in body:
+        metadata["enabled"] = bool(body["enabled"])
+    if "schedule" in body:
+        metadata["schedule"] = body["schedule"]
+
+    # Rebuild file with updated frontmatter
+    lines = ["---"]
+    for k, v in metadata.items():
+        lines.append(f"{k}: {str(v).lower() if isinstance(v, bool) else v}")
+    lines.append("---")
+    if prompt_body:
+        lines.append("")
+        lines.append(prompt_body)
+    task_path.write_text("\n".join(lines))
+
+    return {"status": "updated", "task": task_name, **metadata}
+
+
+@app.get("/tasks/{task_name}/history", dependencies=[Depends(verify_api_key)])
+async def get_task_history(task_name: str, limit: int = 20):
+    """Get run history for a specific task from heartbeat message_history."""
+    with sqlite3.connect(assistant.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, timestamp, message, response, model_used, tokens_used
+            FROM message_history
+            WHERE channel = 'heartbeat' AND message LIKE ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (f"[TASK: {task_name}]%", limit))
+        rows = [dict(row) for row in cursor.fetchall()]
+
+    return {"task": task_name, "history": rows}
+
+
+@app.get("/channels", dependencies=[Depends(verify_api_key)])
+async def list_channels():
+    """List all channels with message counts."""
+    return {"channels": assistant.context_manager.list_channels()}
+
+
 @app.get("/history/{channel}", dependencies=[Depends(verify_api_key)])
 async def get_history(channel: str, limit: int = 10):
     """Get message history for a channel"""
     history = assistant.context_manager.get_history(channel, limit)
     return {"channel": channel, "history": history}
+
+
+@app.delete("/history/{channel}/{message_id}", dependencies=[Depends(verify_api_key)])
+async def delete_message(channel: str, message_id: int):
+    """Delete a single message from history."""
+    with sqlite3.connect(assistant.db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM message_history WHERE id = ? AND channel = ?",
+            (message_id, channel)
+        )
+        conn.commit()
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Message not found")
+    return {"status": "deleted", "id": message_id}
+
+
+@app.delete("/history/{channel}", dependencies=[Depends(verify_api_key)])
+async def delete_channel_history(channel: str):
+    """Delete all message history for a channel."""
+    with sqlite3.connect(assistant.db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM message_history WHERE channel = ?", (channel,))
+        conn.commit()
+        count = cursor.rowcount
+    return {"status": "deleted", "channel": channel, "count": count}
 
 
 @app.post("/heartbeat/enable", dependencies=[Depends(verify_api_key)])
@@ -557,15 +682,18 @@ async def kill_session(session_name: str):
 
 
 @app.get("/dashboard")
-async def dashboard_page():
-    """Monitoring dashboard (no auth required for local access)"""
-    from fastapi.responses import HTMLResponse
+async def dashboard_page(request: Request):
+    """Dashboard with optional password protection via NOCLAW_PASSWORD."""
+    if not _verify_dashboard_cookie(request):
+        return HTMLResponse(content=assistant.dashboard.get_login_html())
     return HTMLResponse(content=assistant.dashboard.get_html())
 
 
 @app.get("/dashboard/stream")
-async def dashboard_stream():
+async def dashboard_stream(request: Request):
     """Server-Sent Events stream for dashboard updates"""
+    if not _verify_dashboard_cookie(request):
+        raise HTTPException(status_code=401, detail="Authentication required")
     from fastapi.responses import StreamingResponse
 
     async def event_generator():
@@ -584,12 +712,47 @@ async def dashboard_stream():
 
 @app.post("/dashboard/test")
 async def dashboard_test(request: Request, background_tasks: BackgroundTasks):
-    """Send a test message from the dashboard (no API key required)"""
+    """Send a test message from the dashboard"""
+    if not _verify_dashboard_cookie(request):
+        raise HTTPException(status_code=401, detail="Authentication required")
     body = await request.json()
     message = body.get("message", "Hello!")
     channel = "dashboard"
     result = await assistant.process_message(channel=channel, message=message)
     return result
+
+
+@app.post("/dashboard/login")
+async def dashboard_login(request: Request):
+    """Authenticate to the dashboard with NOCLAW_PASSWORD."""
+    password = os.getenv("NOCLAW_PASSWORD")
+    if not password:
+        # Dev mode — no password needed
+        return JSONResponse({"status": "ok"})
+
+    body = await request.json()
+    submitted = body.get("password", "")
+    if not hmac.compare_digest(submitted, password):
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    token = _make_session_token(password)
+    response = JSONResponse({"status": "ok"})
+    response.set_cookie(
+        key=DASHBOARD_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="strict",
+        max_age=60 * 60 * 24 * 30,  # 30 days
+    )
+    return response
+
+
+@app.post("/dashboard/logout")
+async def dashboard_logout():
+    """Clear dashboard session cookie."""
+    response = JSONResponse({"status": "ok"})
+    response.delete_cookie(key=DASHBOARD_COOKIE_NAME)
+    return response
 
 
 async def send_callback(url: str, data: Dict):

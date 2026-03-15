@@ -43,7 +43,7 @@ See [docs/NOCLAW-MAC-PLAN.md](docs/NOCLAW-MAC-PLAN.md) for the full plan.
 - **[server/channels/](server/channels/)** — Channel plugins (Telegram, Slack) with auto-discovery
 - **[server/heartbeat.py](server/heartbeat.py)** — Heartbeat task runner (reads workspace/.claude/tasks/)
 - **[server/security.py](server/security.py)** — Workspace validation (SecurityPolicy + validate_workspace)
-- **[server/dashboard.py](server/dashboard.py)** — Monitoring dashboard with SSE
+- **[server/dashboard.py](server/dashboard.py)** — Web control panel (overview, tasks, conversations, agent)
 
 ### Data Structure
 ```
@@ -74,7 +74,7 @@ data/
 
 Tasks are markdown files in `workspace/.claude/tasks/` with human-readable schedules (`every morning`, `every 2 hours`, `every heartbeat`). The heartbeat loop runs them when due. Tasks without a schedule are available on-demand via `POST /tasks/{name}/run`.
 
-See [docs/HEARTBEAT.md](docs/HEARTBEAT.md)
+See [docs/TASKS-HEARTBEAT.md](docs/TASKS-HEARTBEAT.md)
 
 ## Development Guidelines
 
@@ -127,9 +127,14 @@ curl -X POST http://localhost:3000/webhook \
 - Pass via `X-API-Key` header or `Authorization: Bearer <key>`
 - If unset, all requests are allowed (dev mode)
 
+### Dashboard Authentication
+- Set `NOCLAW_PASSWORD` in `.env` to require login for the web dashboard
+- If unset, dashboard is open (dev mode)
+
 ## File References
 
 See [docs/NOCLAW-MAC-PLAN.md](docs/NOCLAW-MAC-PLAN.md) for the implementation plan.
 See [docs/PLUGINS.md](docs/PLUGINS.md) for the channel plugin architecture.
+See [docs/DASHBOARD.md](docs/DASHBOARD.md) for the web control panel.
 See [QUICKSTART.md](QUICKSTART.md) for setup and installation instructions.
 See [README.md](README.md) for project overview.

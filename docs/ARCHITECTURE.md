@@ -169,7 +169,7 @@ Tasks are markdown files in `workspace/.claude/tasks/` with human-readable sched
 
 No cron syntax, no database tables for scheduling, no separate scheduler — just files.
 
-See [HEARTBEAT.md](HEARTBEAT.md).
+See [TASKS-HEARTBEAT.md](TASKS-HEARTBEAT.md).
 
 ### 4. Channels and Agent Skills
 

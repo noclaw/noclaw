@@ -240,8 +240,8 @@ See [Dockerfile.server](Dockerfile.server) and [docker-compose.yml](docker-compo
 
 - **Customize workspace** — agent instructions in `workspace/CLAUDE.md`
 - **Setup integrations** — Gmail, Calendar, etc. via `python3 setup.py`
-- **Monitor** — visit `http://localhost:3000/dashboard`
-- **Secure** — set `NOCLAW_API_KEY` in `.env` for webhook authentication
+- **Monitor** — visit `http://localhost:3000/dashboard` (see [docs/DASHBOARD.md](docs/DASHBOARD.md))
+- **Secure** — set `NOCLAW_API_KEY` in `.env` for webhook authentication, `NOCLAW_PASSWORD` for dashboard login
 - **Enable heartbeat** — periodic task execution via `POST /heartbeat/enable`
 
 ## Documentation
@@ -249,6 +249,7 @@ See [Dockerfile.server](Dockerfile.server) and [docker-compose.yml](docker-compo
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System architecture
 - [docs/PLUGINS.md](docs/PLUGINS.md) — Channels, skills, and integrations
 - [docs/SECURITY.md](docs/SECURITY.md) — Security model
-- [docs/HEARTBEAT.md](docs/HEARTBEAT.md) — Heartbeat scheduling
+- [docs/DASHBOARD.md](docs/DASHBOARD.md) — Web control panel
+- [docs/TASKS-HEARTBEAT.md](docs/TASKS-HEARTBEAT.md) — Heartbeat scheduling
 - [docs/LOGGING.md](docs/LOGGING.md) — Logging configuration
 - [docs/MAC-MINI-SETUP.md](docs/MAC-MINI-SETUP.md) — Mac Mini deployment

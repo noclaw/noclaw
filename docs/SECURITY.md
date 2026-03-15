@@ -20,7 +20,7 @@ workspace/                     # Shared agent workspace
 ├── .claude/                   # Agent-specific Claude config
 │   └── skills/                # Skills available to the agent
 ├── CLAUDE.md                  # Agent instructions (regenerated each run)
-├── HEARTBEAT.md               # Heartbeat checklist (optional)
+├── TASKS-HEARTBEAT.md         # Heartbeat checklist (optional)
 ├── files/                     # User files
 └── conversations/             # Archived conversations
 ```
@@ -100,10 +100,19 @@ Tests verify:
 - Additional mount validation works
 - Config loading works
 
+## Dashboard Authentication
+
+Set `NOCLAW_PASSWORD` in `.env` to require a password for the web dashboard at `/dashboard`. When set, users must log in before accessing the dashboard, SSE stream, or test endpoint. An HTTP-only session cookie is set on successful login.
+
+When `NOCLAW_PASSWORD` is unset, the dashboard is open (suitable for local/dev use).
+
+For production deployments exposed to the internet, use Nginx basic auth or IP allowlisting as an additional layer. See [DIGITAL-OCEAN-SETUP.md](DIGITAL-OCEAN-SETUP.md) for a complete example.
+
 ## Best Practices
 
-1. **Set `NOCLAW_API_KEY`** in production to protect webhook endpoints
-2. **Run in Docker** for production isolation
-3. **Restrict channel users** — set `TELEGRAM_USER_ID` / `SLACK_USER_ID` to your IDs only
-4. **Don't commit `.env`** — it contains secrets
-5. **Review workspace contents** periodically — users can upload files via channels
+1. **Set `NOCLAW_API_KEY`** in production to protect webhook/API endpoints
+2. **Set `NOCLAW_PASSWORD`** to protect the dashboard when exposed publicly
+3. **Run in Docker** for production isolation
+4. **Restrict channel users** — set `TELEGRAM_USER_ID` / `SLACK_USER_ID` to your IDs only
+5. **Don't commit `.env`** — it contains secrets
+6. **Review workspace contents** periodically — users can upload files via channels

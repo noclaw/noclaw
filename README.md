@@ -32,7 +32,7 @@ The interactive setup handles dependencies, `.env` configuration, and optional T
 - **Model Selection** — Choose Haiku/Sonnet/Opus per request
 - **Heartbeat Task Runner** — Scheduled and on-demand tasks as markdown files
 - **Conversation History** — 10-turn history with auto-archival after 50 messages
-- **Monitoring Dashboard** — Real-time dashboard with Server-Sent Events
+- **Web Control Panel** — Dashboard with task management, conversation history, and agent testing
 - **Channel Plugins** — Telegram and Slack auto-start when env vars are set
 - **Agent Skills** — Gmail, Calendar, Google Docs/Sheets/Drive, web browsing, mac control
 
@@ -105,7 +105,7 @@ The codebase is small enough that Claude can safely modify it.
 │   ├── heartbeat.py          # Heartbeat task runner
 │   ├── security.py           # Workspace validation
 │   ├── logger.py             # Structured logging
-│   └── dashboard.py          # Monitoring dashboard
+│   └── dashboard.py          # Web control panel
 ├── workspace/                # Shared agent workspace
 │   ├── .claude/skills/       # Agent skills (active)
 │   ├── .claude/tasks/        # Scheduled and on-demand tasks
@@ -149,6 +149,9 @@ Run `python3 setup.py` for guided channel setup. See [docs/PLUGINS.md](docs/PLUG
 
 - Workspace paths validated before agent execution
 - API key authentication on all endpoints (optional)
+- Dashboard password protection (optional)
+
+See [docs/SECURITY.md](docs/SECURITY.md) and [docs/DASHBOARD.md](docs/DASHBOARD.md).
 
 ## License
 

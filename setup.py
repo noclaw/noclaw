@@ -314,6 +314,13 @@ def step_check_tools() -> None:
         print_warn("claude CLI not found — required for agent execution")
         print_info("Install with: npm install -g @anthropic-ai/claude-code")
 
+    # agent-browser (web browsing skill)
+    if shutil.which("agent-browser"):
+        print_ok("agent-browser installed (web browsing)")
+    else:
+        print_warn("agent-browser not found — required for web browsing skill")
+        print_info("Install with: npm install -g agent-browser")
+
 
 def step_platform_skills() -> None:
     """Step 3: Detect platform and install appropriate skills."""
@@ -805,6 +812,12 @@ def step_verify() -> None:
         print_ok("claude CLI installed")
     else:
         print_warn("claude CLI not installed")
+
+    # agent-browser
+    if shutil.which("agent-browser"):
+        print_ok("agent-browser installed")
+    else:
+        print_warn("agent-browser not installed (npm install -g agent-browser)")
 
     # FastAPI
     if is_package_installed("fastapi"):

@@ -15,9 +15,9 @@
 
 ## Step 1: Get Your Claude Token
 
-### Install Claude Code CLI
+### Install Claude Code CLI and agent-browser
 ```bash
-npm install -g @anthropic-ai/claude-code
+npm install -g @anthropic-ai/claude-code agent-browser
 ```
 
 ### Get Your OAuth Token
@@ -48,7 +48,7 @@ git clone https://github.com/noclaw/noclaw.git
 cd noclaw
 
 # Install required tools
-npm install -g @anthropic-ai/claude-code
+npm install -g @anthropic-ai/claude-code agent-browser
 
 # Install Python dependencies
 pip install -r server/requirements.txt

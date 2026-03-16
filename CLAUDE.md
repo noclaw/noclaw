@@ -24,6 +24,7 @@ See [docs/NOCLAW-MAC-PLAN.md](docs/NOCLAW-MAC-PLAN.md) for the full plan.
 - Python 3.10+
 - Network access for Claude API
 - claude CLI (`npm install -g @anthropic-ai/claude-code`)
+- agent-browser (`npm install -g agent-browser`) — for web browsing skill
 - macOS for desktop control features (optional)
 - cliclick (`brew install cliclick`) — optional, for Mac app control
 

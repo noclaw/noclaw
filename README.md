@@ -29,6 +29,7 @@ The interactive setup handles dependencies, `.env` configuration, and optional T
 - **Mac App Control** — Screenshots, clicks, typing via cliclick and AppleScript
 - **HTTP Webhooks** — Universal API that works with any service
 - **Shared Workspace** — Agent workspace with skills, memory, and files
+
 - **Model Selection** — Choose Haiku/Sonnet/Opus per request
 - **Heartbeat Task Runner** — Scheduled and on-demand tasks as markdown files
 - **Conversation History** — 10-turn history with auto-archival after 50 messages
@@ -142,6 +143,7 @@ Run `python3 setup.py` for guided channel setup. See [docs/PLUGINS.md](docs/PLUG
 
 - Python 3.10+
 - Claude Code CLI (`npm install -g @anthropic-ai/claude-code`)
+- agent-browser (`npm install -g agent-browser`) — for web browsing skill
 - macOS for desktop control features (optional)
 - cliclick (`brew install cliclick`) — for Mac app control (optional)
 

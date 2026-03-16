@@ -37,14 +37,16 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Personal Assistant", version="0.1.0")
 
 
-def verify_api_key(x_api_key: str = Header(None), authorization: str = Header(None)):
-    """Verify API key if NOCLAW_API_KEY is set. No-op in dev mode (unset)."""
+def verify_api_key(request: Request, x_api_key: str = Header(None), authorization: str = Header(None)):
+    """Verify API key if NOCLAW_API_KEY is set. Also accepts valid dashboard cookie. No-op in dev mode (unset)."""
     expected = os.getenv("NOCLAW_API_KEY")
     if not expected:
         return
     if x_api_key == expected:
         return
     if authorization and authorization.startswith("Bearer ") and authorization[7:] == expected:
+        return
+    if _verify_dashboard_cookie(request):
         return
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
@@ -687,6 +689,14 @@ async def dashboard_page(request: Request):
     if not _verify_dashboard_cookie(request):
         return HTMLResponse(content=assistant.dashboard.get_login_html())
     return HTMLResponse(content=assistant.dashboard.get_html())
+
+
+@app.get("/dashboard/data")
+async def dashboard_data(request: Request):
+    """One-shot dashboard data fetch for immediate page load"""
+    if not _verify_dashboard_cookie(request):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return assistant.dashboard.get_dashboard_data()
 
 
 @app.get("/dashboard/stream")

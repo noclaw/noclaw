@@ -520,6 +520,14 @@ let latestData = {};
 let selectedChannel = null;
 
 // ==================== SSE ====================
+// Fetch initial data immediately so the page populates without waiting for SSE
+fetch('/dashboard/data').then(r => r.json()).then(data => {
+    latestData = data;
+    updateOverview(data);
+    updateTasksFromSSE(data);
+    updateAgentTab(data);
+}).catch(() => {});
+
 const eventSource = new EventSource('/dashboard/stream');
 eventSource.onmessage = function(event) {
     latestData = JSON.parse(event.data);

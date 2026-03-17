@@ -139,9 +139,56 @@ nslookup example.com
 curl -L -o files/download.zip https://example.com/file.zip
 ```
 
+## Reliable tmux Completion (Sentinel Protocol)
+
+To know exactly when a tmux command finishes and whether it succeeded, wrap it with sentinel markers:
+
+```bash
+# Generate a unique token
+TOKEN=$(openssl rand -hex 4)
+
+# Run command with sentinels
+tmux send-keys -t mytask "echo __START_${TOKEN} ; npm test ; echo __DONE_${TOKEN}:\$?" Enter
+
+# Later, check for completion
+tmux capture-pane -t mytask -p | grep "__DONE_${TOKEN}"
+# Output: __DONE_a1b2c3d4:0   (exit code 0 = success)
+```
+
+This avoids guessing whether a command is still running or has finished.
+
+## Agent Orchestration
+
+You can spawn sub-agents in tmux sessions for parallel or complex workflows:
+
+```bash
+# Spawn a sub-agent for a focused task
+tmux new-session -d -s research "claude -p 'Research the latest Python 3.13 features and write a summary to /tmp/python-summary.md'"
+
+# Monitor progress
+tmux capture-pane -t research -p
+
+# Collect results when done (check for sentinel or process exit)
+tmux capture-pane -t research -p | tail -5
+cat /tmp/python-summary.md
+
+# Clean up
+tmux kill-session -t research
+```
+
+### Parallel sub-agents
+```bash
+# Spawn multiple focused agents
+tmux new-session -d -s task1 "claude -p 'Research topic A, save to /tmp/a.md'"
+tmux new-session -d -s task2 "claude -p 'Research topic B, save to /tmp/b.md'"
+
+# Wait for both, then synthesize
+# (check tmux list-sessions to see when they exit)
+```
+
+Always clean up sub-agent tmux sessions when done.
+
 ## Tips
 
-- **Save output to files/** — keep results in the workspace for later reference
 - **Use tmux for anything slow** — don't block on long downloads or builds
-- **Prefer `files/` for all output** — screenshots, reports, downloads all go here
 - **Use `jq` for JSON** — pipe curl output through jq for readable results

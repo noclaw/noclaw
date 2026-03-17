@@ -42,8 +42,12 @@ server/
 ├── heartbeat.py          # Heartbeat task runner
 ├── security.py           # Workspace validation
 ├── logger.py             # Structured logging
-├── dashboard.py          # Monitoring dashboard
+├── dashboard.py          # Minimal status dashboard (/dashboard)
 └── startup.py            # Startup validation
+
+web-ui/                   # React control panel (/ui)
+├── src/                  # TypeScript + React source
+└── dist/                 # Built output (served by FastAPI)
 ```
 
 ### assistant.py — Main Orchestrator
@@ -54,7 +58,7 @@ Key methods:
 - `process_message()` — single agent: build prompt, run task, return response
 - `process_parallel()` — multiple agents on independent tasks via asyncio.gather
 - `start_channels()` — auto-discover and start configured channel plugins
-- `_build_system_prompt()` — CLAUDE.md content
+- `_build_system_prompt()` — SOUL.md (if present) + CLAUDE.md content
 - `_build_prompt()` — user info + conversation history + message + context
 - `_resolve_model()` — map "haiku"/"sonnet"/"opus" to model IDs
 
@@ -68,6 +72,8 @@ Two execution modes:
 The `run_task()` function dispatches to the appropriate session type based on `task.execution_mode`.
 
 **Session tracking:** `registry.py` maintains an in-memory dict of active sessions with PID tracking for kill support. Sessions are registered on start and unregistered on completion.
+
+**Progress tracking:** During execution, agents write status lines to `.progress/$AGENT_ID.log`. Progress is surfaced in the `/sessions` API and dashboard. On completion, progress is captured into `SessionResult.progress_updates` before cleanup.
 
 **Multi-turn resume:** CLI sessions capture `session_id` from the stream-json `system/init` event. Passing `--resume <session_id>` on subsequent calls continues the conversation with full context.
 
@@ -105,8 +111,10 @@ workspace/                         # Shared agent workspace
 │   ├── skills/                    # Agent skills (direct-integrations, web-browsing, etc.)
 │   ├── tasks/                     # Scheduled and on-demand task definitions
 │   └── scripts/                   # Python scripts with uv (Gmail, Calendar, etc.)
+├── .progress/                     # Agent progress logs (written during execution, cleaned up after)
 ├── CLAUDE.md                      # Agent instructions (regenerated each run)
-├── files/                         # User files and reports
+├── SOUL.md                        # Optional persona (prepended to system prompt if present)
+├── files/                         # User files and reports (created on demand)
 └── conversations/                 # Archived conversation logs (when enabled)
 
 data/
@@ -203,13 +211,13 @@ See [SECURITY.md](SECURITY.md).
 
 ## Monitoring
 
-### Dashboard
+### Web UI (`/ui`)
 
-HTML page at `/dashboard` with Server-Sent Events for live updates:
-- Active users and session status
-- Heartbeat schedule and results
-- Recent logs
-- Quick test interface
+React control panel (Vite + TypeScript + Tailwind) served as static files from `web-ui/dist/`. Four tabs: Overview, Tasks, Conversations, Agent. Real-time updates via SSE. See [DASHBOARD-UI.md](DASHBOARD-UI.md).
+
+### Status Dashboard (`/dashboard`)
+
+Lightweight inline HTML status page with system stats, channel stats, heartbeat status, and a test message form. Live SSE updates. Links to the full Web UI.
 
 ### Health Check
 

@@ -72,14 +72,28 @@ async def run_cli_session(
         cmd.extend(["--append-system-prompt", system_prompt])
     cmd.append(task.prompt)
 
+    # Ensure .progress directory exists for agent status updates
+    progress_dir = workspace / ".progress"
+    progress_dir.mkdir(exist_ok=True)
+    progress_file = progress_dir / f"{agent_id}.log"
+
+    def _read_progress() -> list:
+        """Read and return progress lines from the agent's progress file."""
+        try:
+            if progress_file.exists():
+                return [l for l in progress_file.read_text().strip().splitlines() if l]
+        except Exception:
+            pass
+        return []
+
     logger.info(f"[{agent_id}] Starting CLI subprocess in {workspace}")
 
     try:
         # Set timeout (None if 0)
         effective_timeout = float(timeout) if timeout > 0 else None
 
-        # Launch subprocess
-        env = None  # inherit environment
+        # Launch subprocess with AGENT_ID in environment for progress tracking
+        env = {**os.environ, "AGENT_ID": agent_id}
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -114,6 +128,7 @@ async def run_cli_session(
                 status=SessionStatus.TIMEOUT,
                 error=f"CLI session timed out after {timeout}s",
                 duration_seconds=elapsed,
+                progress_updates=_read_progress(),
             )
 
         stdout = stdout_bytes.decode("utf-8", errors="replace")
@@ -175,6 +190,7 @@ async def run_cli_session(
                         duration_seconds=elapsed,
                         cost_usd=cost_usd,
                         session_id=session_id,
+                        progress_updates=_read_progress(),
                     )
 
         # Save raw output for debugging (off by default)
@@ -197,6 +213,7 @@ async def run_cli_session(
                 duration_seconds=elapsed,
                 cost_usd=cost_usd,
                 session_id=session_id,
+                progress_updates=_read_progress(),
             )
 
         return SessionResult(
@@ -208,6 +225,7 @@ async def run_cli_session(
             duration_seconds=elapsed,
             cost_usd=cost_usd,
             session_id=session_id,
+            progress_updates=_read_progress(),
         )
 
     except Exception as e:
@@ -218,6 +236,13 @@ async def run_cli_session(
             status=SessionStatus.ERROR,
             error=str(e),
             duration_seconds=elapsed,
+            progress_updates=_read_progress(),
         )
     finally:
+        # Clean up progress file
+        try:
+            if progress_file.exists():
+                progress_file.unlink()
+        except Exception:
+            pass
         registry.unregister(agent_id)

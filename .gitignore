@@ -55,6 +55,7 @@ logs/*.jsonl
 
 # NoClaw specific
 data/
+workspace/.progress/
 workspace/*
 !workspace/.claude/
 workspace/.claude/scripts/.venv/

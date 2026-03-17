@@ -7,6 +7,7 @@ Used by the /sessions endpoints and dashboard to show active agents.
 import asyncio
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, Optional
 
 
@@ -24,6 +25,33 @@ class ActiveSession:
     def elapsed_seconds(self) -> float:
         return time.time() - self.started_at
 
+    @property
+    def progress_file(self) -> Path:
+        return Path(self.workspace) / ".progress" / f"{self.agent_id}.log"
+
+    @property
+    def latest_progress(self) -> Optional[str]:
+        """Read the most recent progress line from the agent's progress file."""
+        try:
+            pf = self.progress_file
+            if pf.exists():
+                lines = pf.read_text().strip().splitlines()
+                return lines[-1] if lines else None
+        except Exception:
+            pass
+        return None
+
+    @property
+    def progress_updates(self) -> list:
+        """Read all progress lines from the agent's progress file."""
+        try:
+            pf = self.progress_file
+            if pf.exists():
+                return [l for l in pf.read_text().strip().splitlines() if l]
+        except Exception:
+            pass
+        return []
+
     def to_dict(self) -> dict:
         elapsed = self.elapsed_seconds
         return {
@@ -34,6 +62,7 @@ class ActiveSession:
             "prompt_preview": self.prompt_preview,
             "workspace": self.workspace,
             "pid": self.pid,
+            "progress": self.latest_progress,
         }
 
 

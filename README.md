@@ -33,7 +33,9 @@ The interactive setup handles dependencies, `.env` configuration, and optional T
 - **Model Selection** — Choose Haiku/Sonnet/Opus per request
 - **Heartbeat Task Runner** — Scheduled and on-demand tasks as markdown files
 - **Conversation History** — 10-turn history with auto-archival after 50 messages
-- **Web Control Panel** — Dashboard with task management, conversation history, and agent testing
+- **Progress Tracking** — Agents write status updates during execution, visible in dashboard and API
+- **Web UI** — React control panel at `/ui` with task management, conversations, and agent testing
+- **Status Dashboard** — Lightweight status page at `/dashboard` with system stats and test message form
 - **Channel Plugins** — Telegram and Slack auto-start when env vars are set
 - **Agent Skills** — Gmail, Calendar, Google Docs/Sheets/Drive, web browsing, mac control
 
@@ -106,12 +108,15 @@ The codebase is small enough that Claude can safely modify it.
 │   ├── heartbeat.py          # Heartbeat task runner
 │   ├── security.py           # Workspace validation
 │   ├── logger.py             # Structured logging
-│   └── dashboard.py          # Web control panel
+│   └── dashboard.py          # Minimal status dashboard (/dashboard)
+├── web-ui/                   # React control panel (/ui)
 ├── workspace/                # Shared agent workspace
 │   ├── .claude/skills/       # Agent skills (active)
 │   ├── .claude/tasks/        # Scheduled and on-demand tasks
-│   ├── CLAUDE.md             # Agent instructions
-│   └── files/                # User files and reports
+│   ├── .progress/            # Agent progress logs (during execution)
+│   ├── CLAUDE.md             # Agent instructions (regenerated each run)
+│   ├── SOUL.md               # Optional persona
+│   └── files/                # User files and reports (created on demand)
 ├── available-skills/         # Platform-specific skills (copied during setup)
 ├── tests/                    # Test suite
 ├── .claude/skills/           # Developer skills
@@ -153,7 +158,7 @@ Run `python3 setup.py` for guided channel setup. See [docs/PLUGINS.md](docs/PLUG
 - API key authentication on all endpoints (optional)
 - Dashboard password protection (optional)
 
-See [docs/SECURITY.md](docs/SECURITY.md) and [docs/DASHBOARD.md](docs/DASHBOARD.md).
+See [docs/SECURITY.md](docs/SECURITY.md) and [docs/DASHBOARD-UI.md](docs/DASHBOARD-UI.md).
 
 ## License
 
@@ -162,4 +167,5 @@ MIT
 ## Acknowledgements
 
 - [NanoClaw](https://github.com/gavrielc/nanoclaw) — Original inspiration
-- [claude-code-second-brain](https://github.com/dynamous-community/workshops/tree/main/claude-code-second-brain) — Agent skills for Google integrations (by Cole Medin / [Dynamous](https://dynamous.ai/))
+- [mac-mini-agent](https://github.com/indysoftwaredev/mac-mini-agent), a macOS automation framework with GUI control and job management
+- [claude-code-second-brain](https://github.com/dynamous-community/workshops/tree/main/claude-code-second-brain) — Direct Integration agent skills for Google (by Cole Medin / [Dynamous](https://dynamous.ai/))

@@ -31,9 +31,10 @@ class SessionResult:
     duration_seconds: float = 0.0
     cost_usd: float = 0.0
     session_id: Optional[str] = None  # Claude CLI session ID for --resume
+    progress_updates: List[str] = field(default_factory=list)  # Status lines from agent
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "agent_id": self.agent_id,
             "status": self.status.value,
             "response": self.response,
@@ -45,6 +46,9 @@ class SessionResult:
             "cost_usd": self.cost_usd,
             "session_id": self.session_id,
         }
+        if self.progress_updates:
+            d["progress_updates"] = self.progress_updates
+        return d
 
 
 @dataclass

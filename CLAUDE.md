@@ -44,7 +44,8 @@ See [docs/NOCLAW-MAC-PLAN.md](docs/NOCLAW-MAC-PLAN.md) for the full plan.
 - **[server/channels/](server/channels/)** — Channel plugins (Telegram, Slack) with auto-discovery
 - **[server/heartbeat.py](server/heartbeat.py)** — Heartbeat task runner (reads workspace/.claude/tasks/)
 - **[server/security.py](server/security.py)** — Workspace validation (SecurityPolicy + validate_workspace)
-- **[server/dashboard.py](server/dashboard.py)** — Web control panel (overview, tasks, conversations, agent)
+- **[server/dashboard.py](server/dashboard.py)** — Minimal status dashboard at `/dashboard`
+- **[web-ui/](web-ui/)** — React control panel at `/ui` (Vite + TypeScript + Tailwind)
 
 ### Data Structure
 ```
@@ -53,8 +54,10 @@ workspace/                        # Shared agent workspace
 │   ├── skills/                   # Agent skills (direct-integrations, web-browsing, etc.)
 │   ├── tasks/                    # Scheduled and on-demand task definitions
 │   └── scripts/                  # Python scripts (Gmail, Calendar, etc.)
+├── .progress/                    # Agent progress logs (written during execution, cleaned up after)
 ├── CLAUDE.md                     # Agent instructions (regenerated each run)
-├── files/                        # User files and reports
+├── SOUL.md                       # Optional persona (prepended to system prompt if present)
+├── files/                        # User files and reports (created on demand)
 └── conversations/                # Archived conversation logs (when LOG_CONVERSATIONS=true)
 
 data/
@@ -136,6 +139,6 @@ curl -X POST http://localhost:3000/webhook \
 
 See [docs/NOCLAW-MAC-PLAN.md](docs/NOCLAW-MAC-PLAN.md) for the implementation plan.
 See [docs/PLUGINS.md](docs/PLUGINS.md) for the channel plugin architecture.
-See [docs/DASHBOARD.md](docs/DASHBOARD.md) for the web control panel.
+See [docs/DASHBOARD-UI.md](docs/DASHBOARD-UI.md) for the web dashboard and control panel.
 See [QUICKSTART.md](QUICKSTART.md) for setup and installation instructions.
 See [README.md](README.md) for project overview.

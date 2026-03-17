@@ -111,7 +111,7 @@ class PersonalAssistant:
 
         # Shared workspace
         WORKSPACE_DIR.mkdir(exist_ok=True)
-        (WORKSPACE_DIR / "files").mkdir(exist_ok=True)
+        # Note: workspace/files/ is not auto-created — skills and tasks create it on demand
         (WORKSPACE_DIR / "conversations").mkdir(exist_ok=True)
         (WORKSPACE_DIR / ".claude").mkdir(exist_ok=True)
         (WORKSPACE_DIR / ".claude" / "skills").mkdir(exist_ok=True)
@@ -155,8 +155,14 @@ class PersonalAssistant:
         return os.getenv("DEFAULT_MODEL", "claude-sonnet-4-5")
 
     def _build_system_prompt(self) -> str:
-        """Build system prompt from CLAUDE.md content."""
-        return self.claude_md or ""
+        """Build system prompt from CLAUDE.md content, with optional SOUL.md persona."""
+        parts = []
+        soul_path = WORKSPACE_DIR / "SOUL.md"
+        if soul_path.exists():
+            parts.append(soul_path.read_text().strip())
+        if self.claude_md:
+            parts.append(self.claude_md)
+        return "\n\n".join(parts)
 
     @staticmethod
     def _build_prompt(message: str, channel: str, history: list, extra_context: dict) -> str:
@@ -227,6 +233,8 @@ class PersonalAssistant:
                 "tokens_used": session_result.tokens_used,
                 "session_id": session_result.session_id,
             }
+            if session_result.progress_updates:
+                result["progress_updates"] = session_result.progress_updates
 
             # Store in history
             self.context_manager.add_message(
@@ -642,10 +650,22 @@ async def get_session_logs(session_name: str, lines: int = 500):
     # Check active sessions
     session = registry.get(session_name)
     if session:
+        output_parts = [
+            f"Session running since {session.elapsed_seconds:.0f}s ago",
+            f"Model: {session.model}",
+            f"Prompt: {session.prompt_preview}",
+        ]
+        progress = session.progress_updates
+        if progress:
+            output_parts.append("")
+            output_parts.append("Progress:")
+            for line in progress:
+                output_parts.append(f"  - {line}")
         return {
             "session": session_name,
-            "output": f"Session running since {session.elapsed_seconds:.0f}s ago\nModel: {session.model}\nPrompt: {session.prompt_preview}",
+            "output": "\n".join(output_parts),
             "status": "running",
+            "progress": progress,
         }
 
     # Check saved conversation logs
@@ -769,6 +789,13 @@ async def send_callback(url: str, data: Dict):
     """Send async callback to URL"""
     # TODO: Implement with aiohttp
     logger.info(f"Would send callback to {url}: {data}")
+
+
+# Serve React web UI build if available (at /ui)
+web_ui_dist = PROJECT_ROOT / "web-ui" / "dist"
+if web_ui_dist.exists():
+    from starlette.staticfiles import StaticFiles
+    app.mount("/ui", StaticFiles(directory=str(web_ui_dist), html=True), name="web-ui")
 
 
 if __name__ == "__main__":

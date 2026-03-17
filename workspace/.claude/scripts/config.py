@@ -38,27 +38,13 @@ DATABASE_PATH = DATA_DIR / "assistant.db"
 
 # DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-# Google OAuth
-GOOGLE_CREDENTIALS_FILE = NOCLAW_ROOT / "google_credentials.json"
-GOOGLE_TOKEN_FILE = NOCLAW_ROOT / "google_token.json"
-GOOGLE_SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/calendar.readonly",
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/documents.readonly",
-    "https://www.googleapis.com/auth/drive.readonly",
-]
-
 # Slack
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN", "")
 SLACK_OWNER_USER_ID = os.getenv("SLACK_USER_ID", "")
 
-#SLACK_NOTIFICATION_CHANNEL = os.getenv("SLACK_NOTIFICATION_CHANNEL", "")
-#SLACK_MONITORED_CHANNELS = os.getenv("SLACK_MONITORED_CHANNELS", "").split(",")
+SLACK_MONITORED_CHANNELS = [c for c in os.getenv("SLACK_MONITORED_CHANNELS", "").split(",") if c]
 
-# Calendar
-GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "")
 
 # === Timezone Configuration ===
 

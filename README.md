@@ -37,7 +37,7 @@ The interactive setup handles dependencies, `.env` configuration, and optional T
 - **Web UI** — React control panel at `/ui` with task management, conversations, and agent testing
 - **Status Dashboard** — Lightweight status page at `/dashboard` with system stats and test message form
 - **Channel Plugins** — Telegram and Slack auto-start when env vars are set
-- **Agent Skills** — Gmail, Calendar, Google Docs/Sheets/Drive, web browsing, mac control
+- **Agent Skills** — Google Workspace (via gws CLI), Slack, web browsing, mac control
 
 ## Architecture
 
@@ -111,7 +111,7 @@ The codebase is small enough that Claude can safely modify it.
 │   └── dashboard.py          # Minimal status dashboard (/dashboard)
 ├── web-ui/                   # React control panel (/ui)
 ├── workspace/                # Shared agent workspace
-│   ├── .claude/skills/       # Agent skills (active)
+│   ├── .claude/skills/       # Agent skills (google, slack, web-browsing, etc.)
 │   ├── .claude/tasks/        # Scheduled and on-demand tasks
 │   ├── .progress/            # Agent progress logs (during execution)
 │   ├── CLAUDE.md             # Agent instructions (regenerated each run)
@@ -149,6 +149,7 @@ Run `python3 setup.py` for guided channel setup. See [docs/PLUGINS.md](docs/PLUG
 - Python 3.10+
 - Claude Code CLI (`npm install -g @anthropic-ai/claude-code`)
 - agent-browser (`npm install -g agent-browser`) — for web browsing skill
+- gws (`npm install -g @googleworkspace/cli`) — for Google Workspace skill (optional)
 - macOS for desktop control features (optional)
 - cliclick (`brew install cliclick`) — for Mac app control (optional)
 

@@ -282,60 +282,47 @@ noclaw status
 noclaw dashboard  # Opens web dashboard
 ```
 
-## Google OAuth Setup (Gmail, Calendar, Drive)
+## Google Workspace Setup (Gmail, Calendar, Drive)
 
-To use Google integrations (email, calendar, spreadsheets, etc.), you need to set up OAuth credentials and run the auth flow.
+Google integrations use the `gws` CLI (Google Workspace CLI).
 
-### 1. Get OAuth Credentials
+### 1. Install gws
 
-On your local machine:
+```bash
+# Inside the container
+docker compose exec noclaw npm install -g @googleworkspace/cli
+```
 
+### 2. Set Up OAuth Credentials
+
+**Option A — Automated (requires gcloud):**
+```bash
+docker compose exec noclaw gws auth setup
+```
+
+**Option B — Manual:**
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a project (or use existing)
 3. Enable the APIs you need: Gmail, Calendar, Sheets, Docs, Drive
 4. Go to **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**
 5. Choose **Desktop app** as the application type
 6. Download the credentials JSON file
-
-### 2. Copy Credentials to Server
-
+7. Copy to the server:
 ```bash
-scp google_credentials.json root@<DROPLET_IP>:/opt/noclaw/workspace/google_credentials.json
+scp client_secret_*.json root@<DROPLET_IP>:/root/.config/gws/credentials.json
 ```
 
-### 3. Run Headless Auth Flow
-
-The auth flow generates a URL you open in your local browser, then paste back the redirect URL.
+### 3. Authenticate
 
 ```bash
-ssh root@<DROPLET_IP>
-cd /opt/noclaw
-
-# Run auth inside the container interactively
-docker compose exec noclaw python3 -c "
-import sys
-sys.path.insert(0, '/app/workspace/.claude/scripts')
-from integrations.auth import run_initial_auth
-run_initial_auth(headless=True)
-"
+docker compose exec noclaw gws auth login
 ```
-
-This will:
-1. Print an authorization URL — open it in your local browser
-2. Authorize the app and grant permissions
-3. Google redirects to `localhost:1` which fails — **that's expected**
-4. Copy the full URL from your browser's address bar
-5. Paste it back into the SSH terminal
-
-The token is saved to `workspace/google_token.json` and auto-refreshes.
 
 ### 4. Verify
 
 ```bash
 noclaw send "How many unread emails do I have?"
 ```
-
-If the token expires and can't refresh, re-run step 3.
 
 ## Updating
 

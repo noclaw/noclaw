@@ -170,15 +170,36 @@ Restart the server — Slack auto-starts. Or re-run `python3 setup.py` for guide
 
 ## Step 6: Setup Integrations (Optional)
 
-The agent can directly access Gmail, Google Calendar, Slack, Google Sheets, Docs, and Drive via the `direct-integrations` skill.
+### Google Workspace (Gmail, Calendar, Drive, Sheets, Docs)
 
-Google integrations and workspace script dependencies are configured during `python3 setup.py` (the Google step walks through OAuth and runs `uv sync` automatically). You can re-run setup.py later to add them.
+The agent uses the `gws` CLI for all Google Workspace interactions.
 
-If you need to install workspace script dependencies manually:
+```bash
+# Install the CLI
+npm install -g @googleworkspace/cli
+
+# Set up OAuth credentials (automated — requires gcloud CLI)
+gws auth setup
+
+# Or manual: download OAuth Desktop credentials from Google Cloud Console
+# and save to ~/.config/gws/credentials.json
+
+# Authenticate
+gws auth login
+```
+
+`python3 setup.py` also walks through this setup interactively.
+
+### Slack
+
+The agent queries Slack via a Python script using a Bot Token.
+
 ```bash
 cd workspace/.claude/scripts
 uv sync
 ```
+
+Set `SLACK_BOT_TOKEN` in `.env`. See `python3 setup.py` for guided setup.
 
 See [docs/PLUGINS.md](docs/PLUGINS.md) for the full integration list and architecture.
 

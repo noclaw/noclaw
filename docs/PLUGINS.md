@@ -17,7 +17,8 @@ Skills in `workspace/.claude/skills/` give the NoClaw agent capabilities during 
 ```
 workspace/.claude/
 └── skills/
-    ├── direct-integrations/   # Gmail, Calendar, Sheets, Docs, Drive, Slack
+    ├── google/                # Gmail, Calendar, Drive, Sheets, Docs via gws CLI
+    ├── slack/                 # Slack channels and messages via Python API
     ├── web-browsing/          # Web search and page reading via agent-browser
     ├── mac-control/           # Screenshots, clicks, typing via cliclick + AppleScript
     └── terminal-control/      # Shell commands, processes, file management
@@ -29,7 +30,8 @@ The agent discovers these via Claude's `setting_sources=["project"]` option, whi
 
 | Skill | Triggers on | Tools used |
 |-------|-------------|------------|
-| **direct-integrations** | "check my email", "show calendar", "read spreadsheet" | Python scripts via `uv run` |
+| **google** | "check my email", "send email", "show calendar", "read spreadsheet" | `gws` CLI |
+| **slack** | "check slack", "send a message to #general" | Python scripts via `uv run` |
 | **web-browsing** | "search the web", "open this URL", "check this website" | `agent-browser` CLI |
 | **mac-control** | "open TextEdit", "take a screenshot", "AirDrop this file" | `screencapture`, `cliclick`, `osascript` |
 | **terminal-control** | "run this command", "check disk space", "install this" | Shell, `tmux`, `brew`, etc. |
@@ -56,17 +58,33 @@ description: Short description of what the skill does and when to trigger it.
 Instructions for the agent on how to use this skill...
 ```
 
-### Direct Integrations
+### Google Workspace
 
-The `direct-integrations` skill gives the agent access to external APIs via Python scripts in `workspace/.claude/scripts/`:
+The `google` skill uses the `gws` CLI (Google Workspace CLI) for all Google interactions. No Python wrapper needed — the agent calls `gws` directly.
+
+| Service | Capabilities |
+|---------|-------------|
+| Gmail | List, read, send, reply, forward emails |
+| Google Calendar | View agenda, create events |
+| Google Sheets | Read, write, append, create spreadsheets |
+| Google Docs | Read and write documents |
+| Google Drive | Find, list, upload, download files |
+
+#### Setup
+
+```bash
+npm install -g @googleworkspace/cli
+gws auth login
+```
+
+Or run `python3 setup.py` for guided setup.
+
+### Slack
+
+The `slack` skill queries Slack via a Python script using a Bot Token.
 
 | Integration | Auth Type | Capabilities |
 |-------------|-----------|-------------|
-| Gmail | Google OAuth | List, read, search emails |
-| Google Calendar | Google OAuth | Today's events, upcoming schedule |
-| Google Sheets | Google OAuth | Read, write, append to spreadsheets |
-| Google Docs | Google OAuth | Read document content |
-| Google Drive | Google OAuth | Find and list files |
 | Slack | Bot token | Channels, messages, send |
 
 #### Script Structure
@@ -74,23 +92,16 @@ The `direct-integrations` skill gives the agent access to external APIs via Pyth
 ```
 workspace/.claude/scripts/
 ├── pyproject.toml                 # Dependencies (managed by uv)
-├── uv.lock                       # Locked dependency versions
-├── .env                           # Credentials (override root .env)
 ├── config.py                      # Centralized configuration
 ├── shared.py                      # Utilities
 └── integrations/
     ├── registry.py                # Integration discovery
-    ├── auth.py                    # Google OAuth token management
-    ├── gmail.py                   # Gmail API
-    ├── calendar_api.py            # Google Calendar API
-    ├── sheets_api.py              # Google Sheets API
-    ├── docs_api.py                # Google Docs API
-    └── drive_api.py               # Google Drive API
+    └── slack_api.py               # Slack API
 ```
 
 #### Setup
 
-`python3 setup.py` handles Google OAuth and runs `uv sync` automatically. To install manually:
+Set `SLACK_BOT_TOKEN` in `.env`, then:
 
 ```bash
 cd workspace/.claude/scripts

@@ -1,13 +1,10 @@
 [project]
 name = "noclaw-scripts"
 version = "0.3.0"
-description = "Agent scripts for NoClaw direct integrations (Gmail, Calendar, Sheets, Docs, Drive, Slack)"
+description = "Agent scripts for NoClaw integrations (Slack)"
 requires-python = ">=3.11"
 dependencies = [
     "python-dotenv>=1.0.0",
-    # Google API integrations
-    "google-api-python-client>=2.100.0",
-    "google-auth-oauthlib>=1.2.0",
     # Slack integration
     "slack-sdk>=3.27.0",
 ]

@@ -25,6 +25,7 @@ See [docs/NOCLAW-MAC-PLAN.md](docs/NOCLAW-MAC-PLAN.md) for the full plan.
 - Network access for Claude API
 - claude CLI (`npm install -g @anthropic-ai/claude-code`)
 - agent-browser (`npm install -g agent-browser`) — for web browsing skill
+- gws (`npm install -g @googleworkspace/cli`) — for Google Workspace skill (optional)
 - macOS for desktop control features (optional)
 - cliclick (`brew install cliclick`) — optional, for Mac app control
 
@@ -51,9 +52,9 @@ See [docs/NOCLAW-MAC-PLAN.md](docs/NOCLAW-MAC-PLAN.md) for the full plan.
 ```
 workspace/                        # Shared agent workspace
 ├── .claude/                      # Agent configuration
-│   ├── skills/                   # Agent skills (direct-integrations, web-browsing, etc.)
+│   ├── skills/                   # Agent skills (google, slack, web-browsing, etc.)
 │   ├── tasks/                    # Scheduled and on-demand task definitions
-│   └── scripts/                  # Python scripts (Gmail, Calendar, etc.)
+│   └── scripts/                  # Python scripts (Slack, etc.)
 ├── .progress/                    # Agent progress logs (written during execution, cleaned up after)
 ├── CLAUDE.md                     # Agent instructions (regenerated each run)
 ├── SOUL.md                       # Optional persona (prepended to system prompt if present)

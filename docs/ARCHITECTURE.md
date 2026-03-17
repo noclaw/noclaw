@@ -108,9 +108,9 @@ See [PLUGINS.md](PLUGINS.md) for details.
 ```
 workspace/                         # Shared agent workspace
 ├── .claude/                       # Agent configuration
-│   ├── skills/                    # Agent skills (direct-integrations, web-browsing, etc.)
+│   ├── skills/                    # Agent skills (google, slack, web-browsing, etc.)
 │   ├── tasks/                     # Scheduled and on-demand task definitions
-│   └── scripts/                   # Python scripts with uv (Gmail, Calendar, etc.)
+│   └── scripts/                   # Python scripts with uv (Slack, etc.)
 ├── .progress/                     # Agent progress logs (written during execution, cleaned up after)
 ├── CLAUDE.md                      # Agent instructions (regenerated each run)
 ├── SOUL.md                        # Optional persona (prepended to system prompt if present)
@@ -194,7 +194,7 @@ See [PLUGINS.md](PLUGINS.md).
 
 **Platform-specific skills in `available-skills/`.**
 
-Skills that require platform-specific capabilities (e.g., mac-control for screenshots, mouse/keyboard, AppleScript) live in `available-skills/`. During setup, platform-appropriate skills are copied to `workspace/.claude/skills/`. Universal skills (web-browsing, direct-integrations, terminal-control) are always available.
+Skills that require platform-specific capabilities (e.g., mac-control for screenshots, mouse/keyboard, AppleScript) live in `available-skills/`. During setup, platform-appropriate skills are copied to `workspace/.claude/skills/`. Universal skills (google, slack, web-browsing, terminal-control) are always available.
 
 ### 6. Security Model
 

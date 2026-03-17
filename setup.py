@@ -37,19 +37,7 @@ MIN_PYTHON = (3, 10)
 TOTAL_STEPS = 10
 AVAILABLE_SKILLS = NOCLAW_ROOT / "available-skills"
 
-GOOGLE_CREDENTIALS_FILE = NOCLAW_ROOT / "google_credentials.json"
-GOOGLE_TOKEN_FILE = NOCLAW_ROOT / "google_token.json"
-# Old location (for auto-migration)
-OLD_GOOGLE_CREDENTIALS = NOCLAW_ROOT / "workspace" / ".claude" / "scripts" / "integrations" / "google_credentials.json"
-OLD_GOOGLE_TOKEN = NOCLAW_ROOT / "workspace" / ".claude" / "scripts" / "integrations" / "google_token.json"
-
-GOOGLE_SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/calendar.readonly",
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/documents.readonly",
-    "https://www.googleapis.com/auth/drive.readonly",
-]
+GWS_CONFIG_DIR = Path.home() / ".config" / "gws"
 
 # Placeholder values in .env.example that should be treated as unset
 PLACEHOLDERS = {
@@ -320,6 +308,13 @@ def step_check_tools() -> None:
     else:
         print_warn("agent-browser not found — required for web browsing skill")
         print_info("Install with: npm install -g agent-browser")
+
+    # gws (Google Workspace CLI)
+    if shutil.which("gws"):
+        print_ok("gws installed (Google Workspace)")
+    else:
+        print_skip("gws not found — needed for Google integrations (Gmail, Calendar, Drive, etc.)")
+        print_info("Install with: npm install -g @googleworkspace/cli")
 
 
 def step_platform_skills() -> None:
@@ -614,139 +609,93 @@ def step_setup_slack(env: OrderedDict) -> None:
 
 
 def step_setup_google(env: OrderedDict) -> None:
-    """Step 8: Google integrations setup (optional)."""
-    print_step(8, "Google integrations (optional)")
+    """Step 8: Google Workspace CLI setup (optional)."""
+    print_step(8, "Google Workspace (optional)")
 
-    # Check if already configured
-    if GOOGLE_TOKEN_FILE.exists():
-        print_ok("Google OAuth token exists")
-        if not prompt_yes_no("Reconfigure?", default=False):
-            # Still collect calendar ID if missing
-            if not env.get("GOOGLE_CALENDAR_ID"):
-                cal_id = prompt("Google Calendar ID (Enter to skip)")
-                if cal_id:
-                    env["GOOGLE_CALENDAR_ID"] = cal_id
-            _install_workspace_scripts()
-            return
+    # Check if gws is installed
+    gws_path = shutil.which("gws")
+    if gws_path:
+        print_ok("gws CLI installed")
+    else:
+        print_warn("gws CLI not found")
+        if prompt_yes_no("Install gws now? (npm install -g @googleworkspace/cli)", default=True):
+            result = subprocess.run(
+                ["npm", "install", "-g", "@googleworkspace/cli"],
+                capture_output=False,
+            )
+            if result.returncode == 0:
+                print_ok("gws installed")
+                gws_path = shutil.which("gws")
+            else:
+                print_warn("Failed to install gws")
+                print_info("Try manually: npm install -g @googleworkspace/cli")
 
-    if not prompt_yes_no("Set up Google integrations (Gmail, Calendar, Sheets, Docs, Drive)?", default=False):
-        print_skip("Skipping Google integrations")
+    if not gws_path:
+        print_skip("Skipping Google setup (gws not installed)")
         _install_workspace_scripts()
         return
 
-    # Auto-migrate credentials from old location
-    if not GOOGLE_CREDENTIALS_FILE.exists() and OLD_GOOGLE_CREDENTIALS.exists():
-        print_info(f"Found credentials at old location, moving to project root...")
-        shutil.copy2(OLD_GOOGLE_CREDENTIALS, GOOGLE_CREDENTIALS_FILE)
-        print_ok("Migrated google_credentials.json to project root")
-    if not GOOGLE_TOKEN_FILE.exists() and OLD_GOOGLE_TOKEN.exists():
-        shutil.copy2(OLD_GOOGLE_TOKEN, GOOGLE_TOKEN_FILE)
-        print_ok("Migrated google_token.json to project root")
-        # If we migrated both, we're done with OAuth
-        if GOOGLE_TOKEN_FILE.exists():
-            print_ok("Google OAuth already authenticated (migrated from old location)")
-            cal_id = prompt("Google Calendar ID (Enter to skip)", default=env.get("GOOGLE_CALENDAR_ID", ""))
-            if cal_id:
-                env["GOOGLE_CALENDAR_ID"] = cal_id
+    # Check if already authenticated
+    gws_creds = GWS_CONFIG_DIR / "credentials.json"
+    if gws_creds.exists():
+        print_ok("gws credentials found")
+        if not prompt_yes_no("Reconfigure?", default=False):
             _install_workspace_scripts()
             return
 
-    # Guide user through Google Cloud Console setup
+    if not prompt_yes_no("Set up Google Workspace (Gmail, Calendar, Sheets, Docs, Drive)?", default=False):
+        print_skip("Skipping Google setup")
+        _install_workspace_scripts()
+        return
+
     print()
-    print("  To set up Google OAuth:")
+    print("  Option A — Automated setup (requires gcloud CLI):")
+    print("    Run: gws auth setup")
+    print("    This creates a GCP project, enables APIs, and creates OAuth credentials.")
+    print()
+    print("  Option B — Manual setup:")
     print("    1. Go to https://console.cloud.google.com")
     print("    2. Create or select a project")
-    print("    3. Enable these APIs (search each in the top bar, click Enable):")
-    print("       - Gmail API")
-    print("       - Google Calendar API")
+    print("    3. Enable APIs: Gmail, Calendar, Sheets, Docs, Drive")
     print("    4. Go to 'APIs & Services' -> 'OAuth consent screen'")
-    print("       - User type: 'External'")
-    print("       - Fill in app name and support email, save")
-    print("       - Click 'Publish App' to move to Production")
-    print("         (avoids 7-day token expiry)")
-    print("    5. Go to 'APIs & Services' -> 'Credentials' -> 'Create Credentials'")
-    print("       -> 'OAuth client ID'")
+    print("       - User type: 'External', fill in app name")
+    print("       - Click 'Publish App' (avoids 7-day token expiry)")
+    print("    5. Go to 'Credentials' -> 'Create Credentials' -> 'OAuth client ID'")
     print("       - Application type: 'Desktop app'")
     print("       - Download the JSON file")
-    print(f"       - Save as: {GOOGLE_CREDENTIALS_FILE.name} (in this directory)")
+    print(f"       - Save as: {gws_creds}")
+    print()
+    print("  Then authenticate:")
+    print("    Run: gws auth login")
     print()
 
-    if not GOOGLE_CREDENTIALS_FILE.exists():
-        input("  Press Enter when ready (or Ctrl+C to skip)...")
-        print()
+    input("  Press Enter when ready (or Ctrl+C to skip)...")
 
-    if not GOOGLE_CREDENTIALS_FILE.exists():
-        print_warn(f"{GOOGLE_CREDENTIALS_FILE.name} not found in project root")
-        print_info("You can re-run setup.py later after downloading it.")
-        _install_workspace_scripts()
-        return
-
-    print_ok(f"Found {GOOGLE_CREDENTIALS_FILE.name}")
-
-    # Collect Calendar ID
-    cal_id = prompt("Google Calendar ID (Enter to skip)", default=env.get("GOOGLE_CALENDAR_ID", ""))
-    if cal_id:
-        env["GOOGLE_CALENDAR_ID"] = cal_id
-
-    # Install Google auth dependencies
-    print()
-    print_info("Installing Google auth dependencies...")
-    result = run_pip("install", "google-auth-oauthlib", "google-api-python-client", quiet=False)
-    if result.returncode != 0:
-        print_warn("Failed to install Google auth dependencies")
-        print_info("Try manually: pip install google-auth-oauthlib google-api-python-client")
-        return
-
-    # Run OAuth flow
-    print()
-    headless = not prompt_yes_no("Open browser for OAuth? (say No for headless/remote)", default=True)
-
+    # Verify authentication by running a simple gws command
     try:
-        from google_auth_oauthlib.flow import InstalledAppFlow
-
-        flow = InstalledAppFlow.from_client_secrets_file(
-            str(GOOGLE_CREDENTIALS_FILE), GOOGLE_SCOPES
+        result = subprocess.run(
+            ["gws", "gmail", "users", "getProfile", "--params", '{"userId":"me"}'],
+            capture_output=True, text=True, timeout=15,
         )
-
-        if headless:
-            flow.redirect_uri = "http://localhost:1"
-            auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
-            print()
-            print("  Open this URL in your browser:")
-            print(f"  {auth_url}")
-            print()
-            print("  Authorize the app. You'll be redirected to a page that FAILS to load.")
-            print("  That's expected! Copy the FULL URL from your browser's address bar.")
-            print()
-            redirect_response = input("  Paste the full redirect URL here: ").strip()
-            flow.fetch_token(authorization_response=redirect_response)
-            creds = flow.credentials
+        if result.returncode == 0:
+            import json as _json
+            try:
+                profile = _json.loads(result.stdout)
+                email = profile.get("emailAddress", "?")
+                print_ok(f"Google authenticated as {email}")
+            except (ValueError, KeyError):
+                print_ok("Google authentication verified")
         else:
-            creds = flow.run_local_server(port=0)
-
-        # Save token
-        GOOGLE_TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
-        print_ok(f"Token saved to {GOOGLE_TOKEN_FILE.name}")
-
-        # Validate
-        from googleapiclient.discovery import build
-
-        gmail = build("gmail", "v1", credentials=creds)
-        profile = gmail.users().getProfile(userId="me").execute()
-        print_ok(f"Gmail connected as {profile.get('emailAddress', '?')}")
-
-        calendar = build("calendar", "v3", credentials=creds)
-        cal_list = calendar.calendarList().list(maxResults=1).execute()
-        print_ok(f"Calendar access confirmed ({len(cal_list.get('items', []))} calendars visible)")
-
+            print_warn("Could not verify authentication")
+            print_info("Run 'gws auth login' to authenticate, then re-run setup.py")
+    except FileNotFoundError:
+        print_warn("gws command not found")
+    except subprocess.TimeoutExpired:
+        print_warn("gws command timed out")
     except KeyboardInterrupt:
         print()
-        print_skip("OAuth flow cancelled")
-    except Exception as e:
-        print_warn(f"OAuth flow failed: {e}")
-        print_info("You can re-run setup.py later to try again.")
+        print_skip("Verification skipped")
 
-    # Install workspace script dependencies via uv
     _install_workspace_scripts()
 
 
@@ -845,9 +794,11 @@ def step_verify() -> None:
     if env.get("SLACK_BOT_TOKEN") and env["SLACK_BOT_TOKEN"] not in PLACEHOLDERS:
         print_ok("Slack configured")
 
-    # Google
-    if GOOGLE_TOKEN_FILE.exists():
-        print_ok("Google OAuth configured")
+    # Google (gws CLI)
+    if shutil.which("gws"):
+        print_ok("gws CLI installed (Google Workspace)")
+    else:
+        print_warn("gws not installed (npm install -g @googleworkspace/cli)")
 
     # Workspace scripts
     scripts_venv = NOCLAW_ROOT / "workspace" / ".claude" / "scripts" / ".venv"

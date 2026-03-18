@@ -20,8 +20,7 @@ workspace/.claude/
     ├── google/                # Gmail, Calendar, Drive, Sheets, Docs via gws CLI
     ├── slack/                 # Slack channels and messages via Python API
     ├── web-browsing/          # Web search and page reading via agent-browser
-    ├── mac-control/           # Screenshots, clicks, typing via cliclick + AppleScript
-    └── terminal-control/      # Shell commands, processes, file management
+    ├── macos/                 # GUI automation via Peekaboo    └── terminal-control/      # Shell commands, processes, file management
 ```
 
 The agent discovers these via Claude's `setting_sources=["project"]` option, which reads `.claude/skills/` relative to the workspace directory.
@@ -33,7 +32,7 @@ The agent discovers these via Claude's `setting_sources=["project"]` option, whi
 | **google** | "check my email", "send email", "show calendar", "read spreadsheet" | `gws` CLI |
 | **slack** | "check slack", "send a message to #general" | Python scripts via `uv run` |
 | **web-browsing** | "search the web", "open this URL", "check this website" | `agent-browser` CLI |
-| **mac-control** | "open TextEdit", "take a screenshot", "AirDrop this file" | `screencapture`, `cliclick`, `osascript` |
+| **macos** | "open TextEdit", "take a screenshot", "AirDrop this file", "send a notification", "create a reminder" | `peekaboo`, `shortcuts` |
 | **terminal-control** | "run this command", "check disk space", "install this" | Shell, `tmux`, `brew`, etc. |
 
 ### Adding a Skill

@@ -27,7 +27,8 @@ See [docs/NOCLAW-MAC-PLAN.md](docs/NOCLAW-MAC-PLAN.md) for the full plan.
 - agent-browser (`npm install -g agent-browser`) — for web browsing skill
 - gws (`npm install -g @googleworkspace/cli`) — for Google Workspace skill (optional)
 - macOS for desktop control features (optional)
-- cliclick (`brew install cliclick`) — optional, for Mac app control
+- peekaboo (`brew install steipete/tap/peekaboo`) — optional, for macOS GUI automation
+
 
 ## Architecture
 

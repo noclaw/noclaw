@@ -316,6 +316,13 @@ def step_check_tools() -> None:
         print_skip("gws not found — needed for Google integrations (Gmail, Calendar, Drive, etc.)")
         print_info("Install with: npm install -g @googleworkspace/cli")
 
+    # peekaboo (macOS GUI automation)
+    if shutil.which("peekaboo"):
+        print_ok("peekaboo installed (GUI automation)")
+    else:
+        print_skip("peekaboo not found — needed for macOS GUI skill")
+        print_info("Install with: brew install steipete/tap/peekaboo")
+
 
 def step_platform_skills() -> None:
     """Step 3: Detect platform and install appropriate skills."""
@@ -329,29 +336,24 @@ def step_platform_skills() -> None:
         print_ok("Platform: macOS")
 
         # Check for mac-specific tools
-        if shutil.which("cliclick"):
-            print_ok("cliclick installed (mouse/keyboard control)")
-        else:
-            print_skip("cliclick not installed (optional: brew install cliclick)")
-
         if shutil.which("tmux"):
             print_ok("tmux installed (background processes)")
         else:
             print_skip("tmux not installed (optional: brew install tmux)")
 
-        # Offer to install mac-control skill
-        mac_skill = skills_dir / "mac-control"
-        available_mac = AVAILABLE_SKILLS / "mac-control"
+        # Offer to install macos skill
+        mac_skill = skills_dir / "macos"
+        available_mac = AVAILABLE_SKILLS / "macos"
         if mac_skill.exists():
-            print_ok("mac-control skill already installed")
+            print_ok("macos skill already installed")
         elif available_mac.exists():
-            if prompt_yes_no("Install mac-control skill? (screenshots, mouse/keyboard, AppleScript)", default=True):
+            if prompt_yes_no("Install macos skill? (Peekaboo, screenshots, mouse/keyboard, AirDrop)", default=True):
                 shutil.copytree(available_mac, mac_skill)
-                print_ok("mac-control skill installed")
+                print_ok("macos skill installed")
             else:
-                print_skip("Skipping mac-control skill")
+                print_skip("Skipping macos skill")
         else:
-            print_skip("mac-control skill not available in available-skills/")
+            print_skip("macos skill not available in available-skills/")
     else:
         print_ok(f"Platform: {platform.system()}")
         print_info("Running in Docker or Linux — mac-specific skills not applicable")
@@ -767,6 +769,12 @@ def step_verify() -> None:
         print_ok("agent-browser installed")
     else:
         print_warn("agent-browser not installed (npm install -g agent-browser)")
+
+    # peekaboo
+    if shutil.which("peekaboo"):
+        print_ok("peekaboo installed")
+    else:
+        print_skip("peekaboo not installed (brew install steipete/tap/peekaboo)")
 
     # FastAPI
     if is_package_installed("fastapi"):

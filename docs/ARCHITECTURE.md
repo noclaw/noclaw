@@ -194,7 +194,7 @@ See [PLUGINS.md](PLUGINS.md).
 
 **Platform-specific skills in `available-skills/`.**
 
-Skills that require platform-specific capabilities (e.g., mac-control for screenshots, mouse/keyboard, AppleScript) live in `available-skills/`. During setup, platform-appropriate skills are copied to `workspace/.claude/skills/`. Universal skills (google, slack, web-browsing, terminal-control) are always available.
+Skills that require platform-specific capabilities (e.g., macos for Peekaboo GUI automation, mouse/keyboard, AppleScript) live in `available-skills/`. During setup, platform-appropriate skills are copied to `workspace/.claude/skills/`. Universal skills (google, slack, web-browsing, terminal-control) are always available.
 
 ### 6. Security Model
 

@@ -1,11 +1,11 @@
 ---
 name: terminal-control
-description: Run shell commands, manage long-running processes, and control the Mac via the terminal. Use for system tasks, installing software, running scripts, file management, process monitoring, and any task that requires shell access. Triggers on requests like "run this command", "install this", "check disk space", "what processes are running", "restart the service", "manage files".
+description: Run shell commands, manage long-running processes, and spawn sub-agents via the terminal. Use for system tasks, installing software, running scripts, file management, process monitoring, and any task that requires shell access. Triggers on requests like "run this command", "install this", "check disk space", "what processes are running", "restart the service", "manage files".
 ---
 
 # Terminal Control
 
-Run shell commands, manage processes, and control the Mac via the terminal.
+Run shell commands, manage processes, and spawn sub-agents via the terminal.
 
 ## Running Commands
 
@@ -13,7 +13,6 @@ You have direct shell access. Run commands normally:
 
 ```bash
 # System info
-sw_vers                        # macOS version
 uname -a                       # Kernel info
 df -h                          # Disk space
 top -l 1 | head -20            # CPU/memory snapshot
@@ -82,37 +81,9 @@ kill -9 <pid>                  # Force
 lsof -i :3000                 # What's using port 3000
 ```
 
-## macOS-Specific
-
-```bash
-# Open apps
-open -a "Safari"
-open -a "Finder" ~/Documents
-open https://example.com       # Open URL in default browser
-
-# Clipboard
-pbcopy < file.txt             # Copy file to clipboard
-pbpaste > output.txt          # Paste clipboard to file
-
-# Notifications
-osascript -e 'display notification "Done!" with title "Task Complete"'
-
-# System preferences
-open "x-apple.systempreferences:com.apple.preference.security"
-
-# Screenshots (alternative to agent-browser)
-screencapture -x files/screen.png          # Silent screenshot
-screencapture -x -R 0,0,800,600 files/region.png  # Region
-```
-
 ## Package Management
 
 ```bash
-# Homebrew
-brew install <package>
-brew list
-brew update && brew upgrade
-
 # Node.js / npm
 npm install -g <package>
 npm list -g --depth=0

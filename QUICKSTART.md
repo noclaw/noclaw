@@ -205,12 +205,12 @@ See [docs/PLUGINS.md](docs/PLUGINS.md) for the full integration list and archite
 
 ## Step 7: Mac App Control (Optional — macOS only)
 
-Install cliclick for mouse/keyboard automation:
+Install peekaboo for mouse/keyboard automation:
 ```bash
-brew install cliclick
+brew install steipete/tap/peekaboo
 ```
 
-This enables the `mac-control` skill — the agent can open apps, click buttons, type text, take screenshots, and AirDrop files. See `workspace/.claude/skills/mac-control/SKILL.md`.
+This enables the `macos` skill — the agent can open apps, click buttons, type text, take screenshots, and AirDrop files. See `workspace/.claude/skills/macos/SKILL.md`.
 
 For a full Mac Mini deployment guide (permissions, auto-start, networking), see [docs/MAC-MINI-SETUP.md](docs/MAC-MINI-SETUP.md).
 

@@ -26,7 +26,7 @@ The interactive setup handles dependencies, `.env` configuration, and optional T
 - **SDK Agent** — Optional fast programmatic execution via Claude Agent SDK
 - **CLI Client** — `noclaw send`, `noclaw reply`, `noclaw status` from any machine
 - **Session Resume** — Multi-turn conversations with `noclaw reply`
-- **Mac App Control** — Screenshots, clicks, typing via cliclick and AppleScript
+- **Mac App Control** — Screenshots, clicks, typing via Peekaboo
 - **HTTP Webhooks** — Universal API that works with any service
 - **Shared Workspace** — Agent workspace with skills, memory, and files
 
@@ -136,7 +136,7 @@ Run `python3 setup.py` for guided channel setup. See [docs/PLUGINS.md](docs/PLUG
 
 ### Native macOS (Mac Mini)
 - Full desktop control (screenshots, mouse/keyboard, AppleScript)
-- Run `python3 setup.py` to detect platform and install mac-control skill
+- Run `python3 setup.py` to detect platform and install macos skill
 - See [docs/MAC-MINI-SETUP.md](docs/MAC-MINI-SETUP.md) for the complete setup guide (permissions, auto-start, networking)
 
 ### Docker (Digital Ocean / VPS)
@@ -151,7 +151,7 @@ Run `python3 setup.py` for guided channel setup. See [docs/PLUGINS.md](docs/PLUG
 - agent-browser (`npm install -g agent-browser`) — for web browsing skill
 - gws (`npm install -g @googleworkspace/cli`) — for Google Workspace skill (optional)
 - macOS for desktop control features (optional)
-- cliclick (`brew install cliclick`) — for Mac app control (optional)
+- peekaboo (`brew install steipete/tap/peekaboo`) — for Mac app control (optional)
 
 ## Security
 
@@ -167,6 +167,6 @@ MIT
 
 ## Acknowledgements
 
-- [NanoClaw](https://github.com/gavrielc/nanoclaw) — Original inspiration
-- [mac-mini-agent](https://github.com/indysoftwaredev/mac-mini-agent), a macOS automation framework with GUI control and job management
-- [claude-code-second-brain](https://github.com/dynamous-community/workshops/tree/main/claude-code-second-brain) — Direct Integration agent skills for Google (by Cole Medin / [Dynamous](https://dynamous.ai/))
+- [NanoClaw](https://github.com/gavrielc/nanoclaw) - Original inspiration
+- [mac-mini-agent](https://github.com/indysoftwaredev/mac-mini-agent) - a macOS automation framework
+- [claude-code-second-brain](https://github.com/dynamous-community/workshops/tree/main/claude-code-second-brain) - Personal Assistant by Cole Medin / ([Dynamous](https://dynamous.ai/))

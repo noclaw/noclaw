@@ -126,6 +126,21 @@ Save the report to files/weekly-report.md
 
 This task has no frontmatter, so it only runs when triggered via `POST /tasks/weekly-report/run` or requested through a channel.
 
+## AirDrop Delivery
+
+Tasks can deliver results via AirDrop by adding `deliver: airdrop` to frontmatter. The heartbeat runner appends delivery instructions to the task prompt, and the agent uses the macOS skill to AirDrop the output file.
+
+```markdown
+---
+schedule: every morning
+deliver: airdrop
+---
+
+Prepare a daily briefing and save it to files/briefing.txt
+```
+
+This requires the `macos` skill and Peekaboo. AirDrop is visual — the agent captures the screen to find recipients and confirm delivery. If no recipients are visible, the agent falls back to saving the file locally and sending a desktop notification.
+
 ## See Also
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — System architecture and design decisions

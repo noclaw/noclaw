@@ -166,6 +166,7 @@ class TaskDefinition:
         self.enabled = metadata.get("enabled", True)
         self.schedule_str = metadata.get("schedule", "")
         self.schedule = parse_schedule(self.schedule_str) if self.schedule_str else None
+        self.deliver = metadata.get("deliver", "")
 
 
 class HeartbeatScheduler:
@@ -262,6 +263,7 @@ class HeartbeatScheduler:
                 "name": t.name,
                 "schedule": t.schedule_str or "on-demand",
                 "enabled": t.enabled,
+                "deliver": t.deliver or None,
                 "last_run": datetime.fromtimestamp(last_run).isoformat() if last_run else None,
             }
             if t.schedule and t.enabled:
@@ -274,9 +276,13 @@ class HeartbeatScheduler:
         logger.info(f"Running task: {task.name}")
 
         try:
+            prompt = f"[TASK: {task.name}]\n\n{task.prompt}"
+            if task.deliver:
+                prompt += f"\n\n---\nDELIVERY: When done, deliver the result via {task.deliver}."
+
             result = await self.assistant.process_message(
                 channel="heartbeat",
-                message=f"[TASK: {task.name}]\n\n{task.prompt}",
+                message=prompt,
                 model_hint="haiku",
             )
 

@@ -5,10 +5,9 @@ Set up NoClaw on a dedicated Mac Mini as an always-on personal AI assistant.
 ## Why a Dedicated Mac Mini?
 
 NoClaw runs natively on macOS (not in Docker) because it needs:
-- **Accessibility APIs** — mouse/keyboard control via cliclick
-- **Screen Recording** — screenshots via screencapture
+- **Accessibility APIs** — mouse/keyboard control via peekaboo
+- **Screen Recording** — screenshots via peekaboo
 - **Native browser** — web browsing via agent-browser
-- **AppleScript** — app scripting (TextEdit, Finder, Notes, AirDrop)
 
 Security comes from the Mac Mini being a dedicated machine on the local network.
 
@@ -39,8 +38,6 @@ brew install python@3.12
 ### Optional (for Mac control skills)
 
 ```bash
-# Mouse/keyboard automation
-brew install cliclick
 
 # Background processes (used by terminal-control skill)
 brew install tmux
@@ -59,7 +56,7 @@ python3 setup.py
 
 The interactive setup handles:
 - Prerequisite checks
-- Platform detection (installs mac-control skill automatically)
+- Platform detection (installs macos skill automatically)
 - Python dependencies
 - `.env` configuration
 - Optional Telegram/Slack/Google setup
@@ -68,7 +65,7 @@ The interactive setup handles:
 
 The agent needs these permissions to control the desktop. Grant them in **System Settings > Privacy & Security**.
 
-### Accessibility (required for cliclick)
+### Accessibility (required for Peekaboo)
 
 1. System Settings > Privacy & Security > Accessibility
 2. Add **Terminal.app** (or your terminal emulator)
@@ -79,7 +76,7 @@ The agent needs these permissions to control the desktop. Grant them in **System
    ```
    In the Privacy dialog, use Cmd+Shift+G to type the path directly (aliases and symlinks can't be selected via the file picker).
 
-### Screen Recording (required for screencapture in agent context)
+### Screen Recording (required for Peekaboo screen capture)
 
 1. System Settings > Privacy & Security > Screen Recording
 2. Add **Terminal.app**
@@ -92,11 +89,11 @@ The agent needs these permissions to control the desktop. Grant them in **System
 ### Verify Permissions
 
 ```bash
-# Test screenshot
-screencapture -x /tmp/test_screen.png && echo "OK" && rm /tmp/test_screen.png
+# Test Peekaboo (screen capture + UI element detection)
+peekaboo see --json && echo "OK"
 
-# Test cliclick
-cliclick p  # Should print current mouse position
+# Test Peekaboo screenshot
+peekaboo image --path /tmp/test_screen.png && echo "OK" && rm /tmp/test_screen.png
 ```
 
 ## Step 4: Network Configuration
@@ -272,9 +269,10 @@ noclaw dashboard           # Open web dashboard
 
 ## Troubleshooting
 
-### "Permission denied" for screencapture/cliclick
-- Check System Settings > Privacy & Security
+### "Permission denied" for Peekaboo
+- Check System Settings > Privacy & Security > Accessibility and Screen Recording
 - The permissions must be granted to the process running the agent (Terminal.app or the Python binary for launchd)
+- Peekaboo requires macOS 15+ (Sequoia) — verify with `sw_vers`
 
 ### Server not reachable from dev machine
 - Check firewall settings
